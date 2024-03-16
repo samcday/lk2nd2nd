@@ -354,7 +354,7 @@ extern void boot_linux(void *kernel, unsigned *tags,
 
 #define MAX_KERNEL_SIZE			(32 * 1024 * 1024)
 #define MAX_TAGS_SIZE			(2 * 1024 * 1024)
-#define MAX_RAMDISK_SIZE		(16 * 1024 * 1024)
+#define MAX_RAMDISK_SIZE		(32 * 1024 * 1024)
 
 struct load_addrs {
 	void *kernel;
