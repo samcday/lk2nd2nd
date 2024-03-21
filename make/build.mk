@@ -13,7 +13,7 @@ $(OUTELF): $(ALLOBJS) $(LINKER_SCRIPT) $(OUTPUT_TZ_BIN)
 else
 $(OUTELF): $(ALLOBJS) $(LINKER_SCRIPT)
 	@echo linking $@
-	$(NOECHO)$(LD) $(LDFLAGS) -T $(LINKER_SCRIPT) $(ALLOBJS) $(LIBGCC) -Map=$(OUTELF).map -o $@
+	$(NOECHO)$(LD) $(LDFLAGS) -T $(LINKER_SCRIPT) $(ALLOBJS) rust/target/armv7a-none-eabi/debug/librust.a $(LIBGCC) -Map=$(OUTELF).map -o $@
 endif
 
 
