@@ -1,6 +1,9 @@
 # comment out or override if you want to see the full output of each command
 NOECHO ?= @
 
+buildrust:
+	cd rust && cargo build --target aarch64-unknown-none
+
 $(OUTBIN): $(OUTELF)
 	@echo generating image: $@
 	$(NOECHO)$(SIZE) $<
@@ -11,9 +14,9 @@ $(OUTELF): $(ALLOBJS) $(LINKER_SCRIPT) $(OUTPUT_TZ_BIN)
 	@echo linking $@
 	$(NOECHO)$(LD) $(LDFLAGS) -T $(LINKER_SCRIPT) $(OUTPUT_TZ_BIN) $(ALLOBJS) $(LIBGCC) -Map=$(OUTELF).map -o $@
 else
-$(OUTELF): $(ALLOBJS) $(LINKER_SCRIPT)
+$(OUTELF): $(ALLOBJS) $(LINKER_SCRIPT) buildrust
 	@echo linking $@
-	$(NOECHO)$(LD) $(LDFLAGS) -T $(LINKER_SCRIPT) $(ALLOBJS) rust/target/armv7a-none-eabi/debug/librust.a $(LIBGCC) -Map=$(OUTELF).map -o $@
+	$(NOECHO)$(LD) $(LDFLAGS) -T $(LINKER_SCRIPT) $(ALLOBJS) rust/target/aarch64-unknown-none/debug/librust.a $(LIBGCC) -Map=$(OUTELF).map -o $@
 endif
 
 

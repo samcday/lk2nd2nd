@@ -13,3 +13,4 @@ panic = "abort"
 panic = "abort"
 
 [dependencies]
+r-efi = "4.3.0"

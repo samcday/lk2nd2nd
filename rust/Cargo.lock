@@ -3,5 +3,14 @@
 version = 3
 
 [[package]]
+name = "r-efi"
+version = "4.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0e244f96e03a3067f9e521d3167bd42657594cb8588c8d3a2db01545dc1af2e0"
+
+[[package]]
 name = "rust"
 version = "0.1.0"
+dependencies = [
+ "r-efi",
+]
