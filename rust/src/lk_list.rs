@@ -17,7 +17,7 @@ pub struct LkList<'a, T> {
     _marker: PhantomData<&'a T>,
 }
 
-impl <'a, T> LkList<'a, T> {
+impl<'a, T> LkList<'a, T> {
     pub fn new(list: *mut list_node) -> Self {
         Self {
             list: unsafe { &mut *list },
@@ -26,7 +26,7 @@ impl <'a, T> LkList<'a, T> {
     }
 }
 
-pub impl<'a, T> IntoIterator for LkList<'a, T> {
+impl<'a, T> IntoIterator for LkList<'a, T> {
     type Item = &'a mut T;
     type IntoIter = LkListIterator<'a, &'a mut T>;
 
@@ -54,7 +54,7 @@ impl<'a, T> Iterator for LkListIterator<'a, &'a mut T> {
             return None;
         }
 
-        let item = unsafe {&mut *(self.cur as *mut T)};
+        let item = unsafe { &mut *(self.cur as *mut T) };
         self.cur = unsafe { (*self.cur).next };
         Some(item)
     }
