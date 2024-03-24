@@ -1,9 +1,10 @@
-use crate::lk_list::{list_node, LkList};
+use crate::lk_list::{list_node, LkListIterator};
 use crate::println;
 
 use core::ffi::{c_char, c_int, c_long, c_longlong, c_uint, c_ulong, c_void, CStr};
 
 use fatfs::{IoBase, Read, Seek, SeekFrom, Write};
+use crate::lk_mutex::{acquire, Mutex, MutexGuard};
 
 #[repr(C)]
 #[derive(Debug)]
@@ -96,17 +97,31 @@ impl Seek for OpenDevice {
     }
 }
 
-#[repr(C)]
-#[derive(Copy, Clone)]
-pub struct bdev_struct {
-    pub list: list_node,
+pub struct BlockDevIterator<'a> {
+    iter: LkListIterator<'a, &'a mut LkBlockDev>,
+    guard: MutexGuard,
 }
 
-// TODO: static lifetime is wrong
-// This should be wrapped in a struct that locks the mutex and unlocks it on Drop
-pub fn get_bdevs() -> LkList<'static, LkBlockDev> {
+impl <'a> Iterator for BlockDevIterator<'a> {
+    type Item = &'a mut LkBlockDev;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.iter.next()
+    }
+}
+
+pub fn get_bdevs <'a>() -> Option<BlockDevIterator<'a>> {
     let bdevs = unsafe { sys::bio_get_bdevs() };
-    unsafe { LkList::new(&mut (*bdevs).list) }
+    if let Some(bdevs) = unsafe { bdevs.as_mut() } {
+        if let Ok(guard) = acquire(&mut bdevs.mutex) {
+            Some(BlockDevIterator {
+                guard,
+                iter: LkListIterator::new(&mut bdevs.list),
+            })
+        } else {
+            None
+        }
+    } else { None }
 }
 
 pub fn open(name: &CStr) -> Option<OpenDevice> {
@@ -126,6 +141,12 @@ pub fn open(name: &CStr) -> Option<OpenDevice> {
 
 mod sys {
     use crate::bio::*;
+
+    pub struct bdev_struct {
+        pub list: list_node,
+        pub mutex: Mutex,
+    }
+
     extern "C" {
         pub fn bio_get_bdevs() -> *mut bdev_struct;
         pub fn bio_open(name: *const c_char) -> *mut LkBlockDev;

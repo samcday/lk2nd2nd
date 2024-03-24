@@ -27,8 +27,4 @@ void lk2nd_bdev_dump_devices(void)
 			(entry->is_leaf ? "Yes" : "")
 			);
 	}
-
-    extern void rust_hello_world(void);
-    rust_hello_world();
-
 }

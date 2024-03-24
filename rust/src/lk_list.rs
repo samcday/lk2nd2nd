@@ -12,37 +12,20 @@ pub struct list_node {
     pub next: *mut list_node,
 }
 
-pub struct LkList<'a, T> {
-    list: &'a mut list_node,
-    _marker: PhantomData<&'a T>,
-}
-
-impl<'a, T> LkList<'a, T> {
-    pub fn new(list: *mut list_node) -> Self {
-        Self {
-            list: unsafe { &mut *list },
-            _marker: PhantomData,
-        }
-    }
-}
-
-impl<'a, T> IntoIterator for LkList<'a, T> {
-    type Item = &'a mut T;
-    type IntoIter = LkListIterator<'a, &'a mut T>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        LkListIterator {
-            head: self.list,
-            cur: self.list.next,
-            _marker: PhantomData,
-        }
-    }
-}
-
 pub struct LkListIterator<'a, T> {
     head: *mut list_node,
     cur: *mut list_node,
     _marker: PhantomData<&'a T>,
+}
+
+impl <'a, T> LkListIterator<'a, T> {
+    pub fn new(list: *mut list_node) -> Self {
+        Self {
+            head: list,
+            cur: (&unsafe { *list }.next).cast(),
+            _marker: PhantomData,
+        }
+    }
 }
 
 impl<'a, T> Iterator for LkListIterator<'a, &'a mut T> {
