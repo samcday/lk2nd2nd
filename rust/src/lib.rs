@@ -8,6 +8,8 @@ mod fmt;
 mod lk_alloc;
 mod lk_list;
 mod panic;
+mod lk_thread;
+mod lk_app;
 
 use crate::bio::OpenDevice;
 use crate::fat_readcache::ReadCache;
@@ -27,7 +29,7 @@ pub extern "C" fn rust_hello_world() {
             let fs = fatfs::FileSystem::new(dev, fatfs::FsOptions::new());
             if let Ok(fs) = fs {
                 let root_dir = fs.root_dir();
-                scan_esp(root_dir);
+                // scan_esp(root_dir);
             }
         }
     }

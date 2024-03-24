@@ -14,9 +14,9 @@ $(OUTELF): $(ALLOBJS) $(LINKER_SCRIPT) $(OUTPUT_TZ_BIN)
 	@echo linking $@
 	$(NOECHO)$(LD) $(LDFLAGS) -T $(LINKER_SCRIPT) $(OUTPUT_TZ_BIN) $(ALLOBJS) $(LIBGCC) -Map=$(OUTELF).map -o $@
 else
-$(OUTELF): $(ALLOBJS) $(LINKER_SCRIPT) buildrust
+$(OUTELF): $(ALLOBJS) $(LINKER_SCRIPT) buildrust librust_app
 	@echo linking $@
-	$(NOECHO)$(LD) $(LDFLAGS) -T $(LINKER_SCRIPT) $(ALLOBJS) rust/target/armv7a-none-eabi/debug/librust.a $(LIBGCC) -Map=$(OUTELF).map -o $@
+	$(NOECHO)$(LD) $(LDFLAGS) -T $(LINKER_SCRIPT) $(ALLOBJS) app/rust_test/target/armv7a-none-eabi/debug/librust_app.a rust/target/armv7a-none-eabi/debug/librust.a $(LIBGCC) -Map=$(OUTELF).map -o $@
 endif
 
 

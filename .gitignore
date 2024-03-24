@@ -11,3 +11,4 @@ cscope.*
 ncscope.*
 
 .idea/
+target/
