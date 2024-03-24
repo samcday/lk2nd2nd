@@ -12,7 +12,7 @@ mod lk_thread;
 mod lk_mutex;
 
 use core::time::Duration;
-use crate::bio::OpenDevice;
+use crate::bio::{LkBlockDev, OpenDevice};
 use crate::fat_readcache::ReadCache;
 
 use fatfs::{DefaultTimeProvider, Dir, File, LossyOemCpConverter};
@@ -22,30 +22,35 @@ use crate::lk_thread::sleep;
 #[no_mangle]
 pub extern "C" fn rust_app() {
     lk_thread::spawn("test", || {
-        let mut esp_dev = None;
+        let mut esp_dev: Option<&mut LkBlockDev> = None;
         while esp_dev.is_none() {
             // lk2nd aboot app might not have initialized sdhci bdev yet. keep checking.
             // TODO: would be better to use lk event signalling for this.
-            sleep(Duration::from_millis(50));
-            esp_dev = bio::get_bdevs().unwrap()
-                .find(|dev| dev.label().is_some_and(|label| label.eq(c"esp")));
+            sleep(Duration::from_millis(500));
+            if let Some(mut bdevs) = bio::get_bdevs() {
+                esp_dev = bdevs.find(|dev| dev.label().is_some_and(|label| label.eq(c"esp")));
+            }
         }
 
         if let Some(esp_dev) = esp_dev {
             println!("found ESP partition: {:?}", esp_dev.name());
 
             if let Some(dev) = bio::open(esp_dev.name()) {
-                let fs = fatfs::FileSystem::new(dev, fatfs::FsOptions::new());
-                if let Ok(fs) = fs {
-                    let root_dir = fs.root_dir();
-                    scan_esp(root_dir);
+                match fatfs::FileSystem::new(dev, fatfs::FsOptions::new()) {
+                    Ok(fs) => {
+                        let root_dir = fs.root_dir();
+                        scan_esp(root_dir);
+                    }
+                    Err(e) => println!("noes! {:?}", e),
                 }
+            } else {
+                println!("failed to open :<");
             }
         }
-         loop {
-             sleep(Duration::from_secs(2));
-             println!("still alive!");
-         }
+        loop {
+            sleep(Duration::from_secs(2));
+            println!("still alive!");
+        }
     });
 }
 
