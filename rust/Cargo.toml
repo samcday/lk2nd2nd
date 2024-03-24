@@ -6,6 +6,9 @@ edition = "2021"
 [lib]
 crate-type = ["staticlib"]
 
+[build]
+target = "armv7a-none-eabi"
+
 [profile.dev]
 panic = "abort"
 

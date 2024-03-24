@@ -12,7 +12,6 @@ use crate::lk_alloc::LkHeap;
 
 use crate::bio::OpenDevice;
 use crate::fat_readcache::ReadCache;
-use core::panic::PanicInfo;
 
 use fatfs::{DefaultTimeProvider, Dir, File, LossyOemCpConverter};
 use object::{Object, ObjectSection};
@@ -21,7 +20,8 @@ use object::{Object, ObjectSection};
 static ALLOCATOR: LkHeap = LkHeap;
 
 #[panic_handler]
-fn panic(_info: &PanicInfo) -> ! {
+#[cfg(not(test))]
+fn panic(_info: &core::panic::PanicInfo) -> ! {
     loop {}
 }
 
