@@ -1,13 +1,14 @@
-use alloc::ffi::CString;
 use crate::lk_list::{list_node, LkList};
-use core::ffi::{c_char, c_int, c_long, c_longlong, c_uint, c_ulong, c_ulonglong, c_void, CStr};
-use core::ops::Deref;
-use fatfs::{IoBase, Read, ReadWriteSeek, Seek, SeekFrom, Write};
 use crate::println;
+
+use core::ffi::{c_char, c_int, c_long, c_longlong, c_uint, c_ulong, c_void, CStr};
+
+use fatfs::{IoBase, Read, Seek, SeekFrom, Write};
 
 #[repr(C)]
 #[derive(Debug)]
-pub struct LkBlockDev { // bdev_t
+pub struct LkBlockDev {
+    // bdev_t
     node: list_node,
     _ref: c_int,
 
@@ -42,16 +43,27 @@ pub struct OpenDevice {
 
 impl Drop for OpenDevice {
     fn drop(&mut self) {
-        unsafe { sys::bio_close(self.dev); }
+        unsafe {
+            sys::bio_close(self.dev);
+        }
     }
 }
 
-impl IoBase for OpenDevice { type Error = (); }
+impl IoBase for OpenDevice {
+    type Error = ();
+}
 
 impl Read for OpenDevice {
     fn read(&mut self, buf: &mut [u8]) -> Result<usize, Self::Error> {
         // NOTE: explicitly not doing bounds checks here, as they're already done in bio_read()
-        let read = unsafe { sys::bio_read(self.dev, buf.as_mut_ptr() as _, self.read_pos, buf.len() as c_ulong) };
+        let read = unsafe {
+            sys::bio_read(
+                self.dev,
+                buf.as_mut_ptr() as _,
+                self.read_pos,
+                buf.len() as c_ulong,
+            )
+        };
         if read < 0 {
             Err(())
         } else {
@@ -62,7 +74,7 @@ impl Read for OpenDevice {
 }
 
 impl Write for OpenDevice {
-    fn write(&mut self, buf: &[u8]) -> Result<usize, Self::Error> {
+    fn write(&mut self, _buf: &[u8]) -> Result<usize, Self::Error> {
         println!("unhandled write");
         Err(())
     }
@@ -84,7 +96,6 @@ impl Seek for OpenDevice {
     }
 }
 
-
 #[repr(C)]
 #[derive(Copy, Clone)]
 pub struct bdev_struct {
@@ -98,7 +109,7 @@ pub fn get_bdevs() -> LkList<'static, LkBlockDev> {
     unsafe { LkList::new(&mut (*bdevs).list) }
 }
 
-pub  fn open(name: &CStr) -> Option<OpenDevice> {
+pub fn open(name: &CStr) -> Option<OpenDevice> {
     let dev = unsafe { sys::bio_open(name.as_ptr()) };
 
     return if dev.is_null() {
@@ -110,7 +121,7 @@ pub  fn open(name: &CStr) -> Option<OpenDevice> {
             read_pos: 0,
             size: dev_ref.size,
         })
-    }
+    };
 }
 
 mod sys {
@@ -119,6 +130,11 @@ mod sys {
         pub fn bio_get_bdevs() -> *mut bdev_struct;
         pub fn bio_open(name: *const c_char) -> *mut LkBlockDev;
         pub fn bio_close(dev: *mut LkBlockDev);
-        pub fn bio_read(dev: *mut LkBlockDev, buf: *mut c_void, offset: c_longlong, len: c_ulong) -> c_long;
+        pub fn bio_read(
+            dev: *mut LkBlockDev,
+            buf: *mut c_void,
+            offset: c_longlong,
+            len: c_ulong,
+        ) -> c_long;
     }
 }

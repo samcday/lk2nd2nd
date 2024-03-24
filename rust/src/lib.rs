@@ -1,6 +1,7 @@
 #![no_std]
 
 mod bio;
+mod fat_readcache;
 mod fmt;
 mod lk_alloc;
 mod lk_list;
@@ -9,7 +10,12 @@ extern crate alloc;
 
 use crate::lk_alloc::LkHeap;
 
+use crate::bio::OpenDevice;
+use crate::fat_readcache::ReadCache;
 use core::panic::PanicInfo;
+
+use fatfs::{DefaultTimeProvider, Dir, File, LossyOemCpConverter};
+use object::{Object, ObjectSection};
 
 #[global_allocator]
 static ALLOCATOR: LkHeap = LkHeap;
@@ -31,12 +37,33 @@ pub extern "C" fn rust_hello_world() {
             let fs = fatfs::FileSystem::new(dev, fatfs::FsOptions::new());
             if let Ok(fs) = fs {
                 let root_dir = fs.root_dir();
-                for dir in root_dir.iter() {
-                    if let Ok(dir) = dir {
-                        println!("ESP root dir: {:?}", dir.file_name());
-                    }
+                scan_esp(root_dir);
+            }
+        }
+    }
+}
+
+fn scan_esp(dir: Dir<OpenDevice, DefaultTimeProvider, LossyOemCpConverter>) {
+    for entry in dir.iter() {
+        if let Ok(entry) = entry {
+            let name = entry.file_name();
+            if name != ".." && name != "." {
+                if entry.is_dir() {
+                    scan_esp(entry.to_dir());
+                } else {
+                    println!("parsing {} of size {}", name, entry.len());
+                    parse_esp_file(entry.to_file(), entry.len());
                 }
             }
+        }
+    }
+}
+
+fn parse_esp_file(file: File<OpenDevice, DefaultTimeProvider, LossyOemCpConverter>, _size: u64) {
+    let reader = ReadCache::new(file);
+    if let Ok(obj) = object::File::parse(&reader) {
+        for section in obj.sections() {
+            println!("section: {:?}", section.name());
         }
     }
 }
