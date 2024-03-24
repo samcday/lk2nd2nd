@@ -6,7 +6,7 @@
 use core::marker::PhantomData;
 
 #[repr(C)]
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub struct list_node {
     pub prev: *mut list_node,
     pub next: *mut list_node,

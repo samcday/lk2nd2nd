@@ -26,5 +26,17 @@ pub extern "C" fn rust_hello_world() {
         .find(|dev| dev.label().is_some_and(|label| label.eq(c"esp")));
     if let Some(esp_dev) = esp_dev {
         println!("found ESP partition: {:?}", esp_dev.name());
+
+        if let Some(dev) = bio::open(esp_dev.name()) {
+            let fs = fatfs::FileSystem::new(dev, fatfs::FsOptions::new());
+            if let Ok(fs) = fs {
+                let root_dir = fs.root_dir();
+                for dir in root_dir.iter() {
+                    if let Ok(dir) = dir {
+                        println!("ESP root dir: {:?}", dir.file_name());
+                    }
+                }
+            }
+        }
     }
 }

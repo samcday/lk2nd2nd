@@ -14,3 +14,4 @@ panic = "abort"
 
 [dependencies]
 r-efi = "4.3.0"
+fatfs = { default-features = false, features = ["alloc", "lfn"], git = "https://github.com/rafalh/rust-fatfs", rev = "1aa43f7" }
