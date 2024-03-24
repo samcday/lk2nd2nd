@@ -1,29 +1,19 @@
 #![no_std]
 
+extern crate alloc;
+
 mod bio;
 mod fat_readcache;
 mod fmt;
 mod lk_alloc;
 mod lk_list;
-
-extern crate alloc;
-
-use crate::lk_alloc::LkHeap;
+mod panic;
 
 use crate::bio::OpenDevice;
 use crate::fat_readcache::ReadCache;
 
 use fatfs::{DefaultTimeProvider, Dir, File, LossyOemCpConverter};
 use object::{Object, ObjectSection};
-
-#[global_allocator]
-static ALLOCATOR: LkHeap = LkHeap;
-
-#[panic_handler]
-#[cfg(not(test))]
-fn panic(_info: &core::panic::PanicInfo) -> ! {
-    loop {}
-}
 
 #[no_mangle]
 pub extern "C" fn rust_hello_world() {

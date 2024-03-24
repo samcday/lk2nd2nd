@@ -3,6 +3,9 @@ use core::ffi::{c_uint, c_void};
 
 pub struct LkHeap;
 
+#[global_allocator]
+static ALLOCATOR: LkHeap = LkHeap;
+
 extern "C" {
     pub fn heap_alloc(sz: c_uint, alignment: c_uint) -> *mut c_void;
     pub fn heap_free(ptr: *mut c_void);
