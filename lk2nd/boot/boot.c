@@ -10,6 +10,7 @@
 
 #include <lk2nd/boot.h>
 #include <lk2nd/hw/bdev.h>
+#include <fastboot.h>
 
 #include "boot.h"
 
@@ -70,5 +71,11 @@ void lk2nd_boot(void)
 		init_done = true;
 	}
 
-	lk2nd_scan_devices();
+    //	lk2nd_scan_devices();
+    fastboot_register_commands();
+    extern void aboot_fastboot_register_commands(void);
+    aboot_fastboot_register_commands();
+    fastboot_init(target_get_scratch_address(), target_get_max_flash_size());
+    extern void boot_scan(void);
+    boot_scan();
 }

@@ -5764,8 +5764,3 @@ static int aboot_save_boot_hash_mmc(uint32_t image_addr, uint32_t image_size)
 APP_START(aboot)
 	.init = aboot_init,
 APP_END
-
-extern void rust_app(const struct app_descriptor *app);
-APP_START(rust)
-    .init = rust_app,
-APP_END

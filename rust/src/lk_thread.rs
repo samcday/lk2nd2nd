@@ -19,6 +19,10 @@ pub fn spawn(name: &str, f: fn() -> !) -> bool {
     return true;
 }
 
+pub fn exit() -> ! {
+    unsafe { sys::thread_exit(0) }
+}
+
 pub fn sleep(dur: Duration) {
     unsafe { sys::thread_sleep(dur.as_millis() as c_ulong); }
 }
@@ -38,9 +42,6 @@ mod sys {
         pub fn thread_create(name: *const c_char, entry: thread_start_routine, arg: *mut c_void, priority: c_int, stack_size: usize) -> *mut c_void;
         pub fn thread_resume(arg1: *mut c_void) -> c_int;
         pub fn thread_sleep(delay: c_ulong);
+        pub fn thread_exit(code: c_int) -> !;
     }
 }
-
-
-// thread_t *thread_create(const char *name, );
-// status_t thread_resume(thread_t *);
