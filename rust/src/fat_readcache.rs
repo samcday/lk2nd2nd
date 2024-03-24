@@ -1,3 +1,8 @@
+//! This is a direct copy/pasta of the object ReadCache implementation.
+//! Currently, that implementation depends on the std::io::Read/Seek traits.
+//! Hopefully the upstream can adopt no_std-friendly traits in future:
+//! https://github.com/gimli-rs/object/issues/652
+
 use alloc::boxed::Box;
 use alloc::collections::btree_map::Entry;
 use alloc::collections::BTreeMap;
