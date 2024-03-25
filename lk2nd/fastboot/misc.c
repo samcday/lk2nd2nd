@@ -2,7 +2,7 @@
 /* Copyright (c) 2019-2022, Stephan Gerhold <stephan@gerhold.net> */
 
 #include <debug.h>
-#include <fastboot.h>
+#include <app/fastboot.h>
 #include <platform.h>
 
 #if WITH_DEBUG_LOG_BUF

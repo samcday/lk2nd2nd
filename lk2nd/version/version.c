@@ -3,7 +3,7 @@
 
 #include <boot.h>
 #include <libfdt.h>
-#include <fastboot.h>
+#include <app/fastboot.h>
 
 #include <lk2nd/version.h>
 

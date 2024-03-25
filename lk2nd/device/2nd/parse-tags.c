@@ -2,7 +2,7 @@
 /* Copyright (c) 2022, Stephan Gerhold <stephan@gerhold.net> */
 
 #include <debug.h>
-#include <fastboot.h>
+#include <app/fastboot.h>
 #include <stdlib.h>
 #include <string.h>
 

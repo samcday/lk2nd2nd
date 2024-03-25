@@ -28,6 +28,7 @@
  * SUCH DAMAGE.
  */
 
+#include <app.h>
 #include <debug.h>
 #include <string.h>
 #include <stdlib.h>
@@ -36,7 +37,7 @@
 #include <kernel/thread.h>
 #include <kernel/event.h>
 #include <dev/udc.h>
-#include "fastboot.h"
+#include <app/fastboot.h>
 
 #ifdef USB30_SUPPORT
 #include <usb30_udc.h>
@@ -663,8 +664,22 @@ static void fastboot_notify(struct udc_gadget *gadget, unsigned event)
 	}
 }
 
-int fastboot_init(void *base, unsigned size)
+void fastboot_init(const struct app_descriptor *app)
 {
+    /* register aboot specific fastboot commands */
+    fastboot_register_commands();
+    extern void aboot_fastboot_register_commands(void);
+    aboot_fastboot_register_commands();
+
+    void *base = target_get_scratch_address();
+    unsigned size = target_get_max_flash_size();
+
+#if VERIFIED_BOOT_2
+    /* Add salt buffer offset at start of image address to copy VB salt */
+	base = ADD_SALT_BUFF_OFFSET(base);
+    size = SUB_SALT_BUFF_OFFSET(size);
+#endif
+
 	char sn_buf[13];
 	thread_t *thr;
 	dprintf(INFO, "fastboot_init()\n");
@@ -759,7 +774,7 @@ int fastboot_init(void *base, unsigned size)
 
 	usb_if.udc_start();
 
-	return 0;
+	return;
 
 fail_udc_register:
 	usb_if.udc_request_free(req);
@@ -768,10 +783,14 @@ fail_alloc_req:
 fail_alloc_out:
 	usb_if.udc_endpoint_free(in);
 fail_alloc_in:
-	return -1;
+	return;
 }
 
 void fastboot_stop(void)
 {
-	usb_if.udc_stop();
+   usb_if.udc_stop();
 }
+
+APP_START(fastboot)
+    .init = fastboot_init,
+APP_END

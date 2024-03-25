@@ -4,7 +4,7 @@
 #include <printf.h>
 
 #include <dev/fbcon.h>
-#include <fastboot.h>
+#include <app/fastboot.h>
 
 extern void *rgb565_to_rgb888(void *out, const void *in, uint32_t npixels);
 extern void *rgb888_swap(void *out, const void *in, uint32_t npixels);

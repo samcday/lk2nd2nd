@@ -3,7 +3,7 @@
 
 #include <crypto_hash.h>
 #include <debug.h>
-#include <fastboot.h>
+#include <app/fastboot.h>
 #include <string.h>
 #include <target.h>
 

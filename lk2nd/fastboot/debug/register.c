@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: BSD-3-Clause
 /* Copyright (c) 2022-2023, Stephan Gerhold <stephan@gerhold.net> */
 
-#include <fastboot.h>
+#include <app/fastboot.h>
 #include <reg.h>
 #include <stdint.h>
 #include <stdlib.h>

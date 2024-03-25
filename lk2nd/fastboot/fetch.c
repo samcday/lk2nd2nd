@@ -5,7 +5,7 @@
 #include <string.h>
 
 #include <dev/flash.h>
-#include <fastboot.h>
+#include <app/fastboot.h>
 #include <lib/ptable.h>
 #include <partition_parser.h>
 #include <target.h>

@@ -30,7 +30,7 @@ IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <stdlib.h>
 #include <debug.h>
 #include "devinfo.h"
-#include "fastboot.h"
+#include <app/fastboot.h>
 #include "fastboot_test.h"
 #include <app/tests.h>
 #include <target.h>

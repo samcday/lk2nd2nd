@@ -83,7 +83,7 @@
 #include "recovery.h"
 #include "boot.h"
 #include "bootimg.h"
-#include "fastboot.h"
+#include <app/fastboot.h>
 #include "sparse_format.h"
 #include "meta_format.h"
 #include "mmc.h"
@@ -3308,7 +3308,7 @@ void cmd_boot(const char *arg, void *data, unsigned sz)
 	}
 
 	/* Verify the boot image
-	 * device & page_size are initialized in aboot_init
+	 * device & page_size are initialized in aboot_entry
 	 */
 	if (target_use_signed_kernel() && (!device.is_unlocked)) {
 		/* Pass size excluding signature size, otherwise we would try to
@@ -5475,7 +5475,7 @@ void aboot_fastboot_register_commands(void)
 	}
 }
 
-void aboot_init(const struct app_descriptor *app)
+void aboot_entry(const struct app_descriptor *app, void *arg)
 {
 	unsigned reboot_mode = 0;
 	int boot_err_type = 0;
@@ -5708,22 +5708,11 @@ retry_boot:
 fastboot:
 	/* We are here means regular boot did not happen. Start fastboot. */
 
-	/* register aboot specific fastboot commands */
-	fastboot_register_commands();
-	aboot_fastboot_register_commands();
-
 	/* dump partition table for debug info */
 	if (target_is_emmc_boot())
 		partition_dump();
 
 	/* initialize and start fastboot */
-#if !VERIFIED_BOOT_2
-	fastboot_init(target_get_scratch_address(), target_get_max_flash_size());
-#else
-	/* Add salt buffer offset at start of image address to copy VB salt */
-	fastboot_init(ADD_SALT_BUFF_OFFSET(target_get_scratch_address()),
-		SUB_SALT_BUFF_OFFSET(target_get_max_flash_size()));
-#endif
 #if FBCON_DISPLAY_MSG || WITH_LK2ND_DEVICE_MENU
 	display_fastboot_menu();
 #endif
@@ -5762,5 +5751,5 @@ static int aboot_save_boot_hash_mmc(uint32_t image_addr, uint32_t image_size)
 
 
 APP_START(aboot)
-	.init = aboot_init,
+	.entry = aboot_entry,
 APP_END

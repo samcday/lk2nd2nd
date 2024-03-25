@@ -4,7 +4,7 @@
 #include <boot.h>
 #include <compiler.h>
 #include <debug.h>
-#include <fastboot.h>
+#include <app/fastboot.h>
 #include <libfdt.h>
 #include <target.h>
 #include <zlib.h>

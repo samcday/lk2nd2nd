@@ -26,7 +26,7 @@
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  */
-#include <fastboot.h>
+#include <app/fastboot.h>
 #include <err.h>
 #include <target.h>
 

@@ -3,7 +3,7 @@
 
 #include <debug.h>
 #include <dev_tree.h>
-#include <fastboot.h>
+#include <app/fastboot.h>
 #include <string.h>
 
 #include <libfdt.h>
