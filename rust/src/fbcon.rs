@@ -1,10 +1,11 @@
 use core::convert::Infallible;
 use core::ffi::{c_uint, c_void};
 use core::ptr::slice_from_raw_parts_mut;
+
 use embedded_graphics::draw_target::DrawTarget;
 use embedded_graphics::geometry::{Dimensions, Size};
 use embedded_graphics::Pixel;
-use embedded_graphics::pixelcolor::{IntoStorage, Rgb565, Rgb888, RgbColor};
+use embedded_graphics::pixelcolor::{Rgb888, RgbColor};
 use embedded_graphics::prelude::Point;
 use embedded_graphics::primitives::Rectangle;
 
@@ -15,13 +16,13 @@ pub struct FbCon888<'a> {
     buf: &'a mut [u8],
 }
 
-impl <'a> Dimensions for FbCon888<'a> {
+impl<'a> Dimensions for FbCon888<'a> {
     fn bounding_box(&self) -> Rectangle {
         Rectangle::new(Point::zero(), Size::new(self.width, self.height))
     }
 }
 
-impl <'a> DrawTarget for FbCon888<'a> {
+impl<'a> DrawTarget for FbCon888<'a> {
     type Color = Rgb888;
     type Error = Infallible;
 
@@ -52,7 +53,7 @@ pub fn get<'a>() -> Option<FbCon888<'a>> {
             width: fbcon.width,
             height: fbcon.height,
             stride: fbcon.stride as usize,
-            buf: &mut *slice_from_raw_parts_mut(fbcon.buf.cast(), (fbcon.stride * fbcon.height * 3) as usize)
+            buf: &mut *slice_from_raw_parts_mut(fbcon.buf.cast(), (fbcon.stride * fbcon.height * 3) as usize),
         })
     }
 }
@@ -69,5 +70,5 @@ struct fbcon_config {
 }
 
 extern "C" {
-    pub fn fbcon_display() -> *mut fbcon_config;
+    fn fbcon_display() -> *mut fbcon_config;
 }

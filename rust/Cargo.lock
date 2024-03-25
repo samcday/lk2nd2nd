@@ -178,6 +178,7 @@ dependencies = [
  "fatfs",
  "object",
  "r-efi",
+ "tinybmp",
 ]
 
 [[package]]
@@ -189,6 +190,14 @@ dependencies = [
  "proc-macro2",
  "quote",
  "unicode-ident",
+]
+
+[[package]]
+name = "tinybmp"
+version = "0.5.0"
+source = "git+https://github.com/samcday/tinybmp?branch=alpha-hack#5e71cb508780bd112dc2d733a6f6c3fcf6954648"
+dependencies = [
+ "embedded-graphics",
 ]
 
 [[package]]

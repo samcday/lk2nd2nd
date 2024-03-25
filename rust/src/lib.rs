@@ -2,6 +2,27 @@
 
 extern crate alloc;
 
+use core::time::Duration;
+
+use embedded_graphics::{
+    mono_font::MonoTextStyle
+    ,
+    prelude::*,
+    primitives::{
+        Circle, PrimitiveStyle, PrimitiveStyleBuilder, Rectangle, StrokeAlignment, Triangle,
+    },
+    text::{Alignment, Text},
+};
+use embedded_graphics::image::Image;
+use embedded_graphics::pixelcolor::Rgb888;
+use embedded_vintage_fonts::FONT_24X32;
+use fatfs::{DefaultTimeProvider, Dir, File, LossyOemCpConverter, Read, Seek, SeekFrom};
+use object::{Object, ObjectSection, ReadCache, ReadCacheOps};
+use tinybmp::Bmp;
+
+use crate::bio::OpenDevice;
+use crate::lk_thread::sleep;
+
 mod bio;
 mod fmt;
 mod lk_alloc;
@@ -11,29 +32,10 @@ mod lk_thread;
 mod lk_mutex;
 mod fbcon;
 
-use core::time::Duration;
-use crate::bio::{LkBlockDev, OpenDevice};
-
-use fatfs::{DefaultTimeProvider, Dir, File, LossyOemCpConverter, Read, Seek, SeekFrom};
-use object::{Object, ObjectSection, ReadCache, ReadCacheOps};
-use crate::lk_thread::sleep;
-
-use embedded_graphics::{
-    mono_font::{ascii::FONT_6X10, MonoTextStyle},
-    pixelcolor::BinaryColor,
-    prelude::*,
-    primitives::{
-        Circle, PrimitiveStyle, PrimitiveStyleBuilder, Rectangle, StrokeAlignment, Triangle,
-    },
-    text::{Alignment, Text},
-};
-use embedded_graphics::pixelcolor::Rgb888;
-use embedded_vintage_fonts::FONT_24X32;
-
 #[no_mangle]
 pub extern "C" fn boot_scan() {
     lk_thread::spawn("boot-scan", || {
-        let mut esp_dev = bio::get_bdevs().unwrap()
+        let esp_dev = bio::get_bdevs().unwrap()
             .find(|dev| dev.label().is_some_and(|label| label.eq(c"esp")));
 
         if let Some(esp_dev) = esp_dev {
@@ -43,7 +45,9 @@ pub extern "C" fn boot_scan() {
                 match fatfs::FileSystem::new(dev, fatfs::FsOptions::new()) {
                     Ok(fs) => {
                         let root_dir = fs.root_dir();
-                        scan_esp(root_dir);
+                        if let Ok(esp_dir) = root_dir.open_dir("/EFI/") {
+                            scan_esp(esp_dir);
+                        }
                     }
                     Err(e) => println!("noes! {:?}", e),
                 }
@@ -57,7 +61,6 @@ pub extern "C" fn boot_scan() {
     let mut display = fbcon::get().unwrap();
     display.clear(Rgb888::CSS_BLACK).unwrap();
 
-    let mut offset = 0;
     let color = Rgb888::new(255, 0, 0);
     // Create styles used by the drawing operations.
     let thin_stroke = PrimitiveStyle::with_stroke(color, 1);
@@ -70,9 +73,9 @@ pub extern "C" fn boot_scan() {
     let fill = PrimitiveStyle::with_fill(color);
     let character_style = MonoTextStyle::new(&FONT_24X32, color);
 
-    let mut text = Text::with_alignment(
+    let text = Text::with_alignment(
         "Rust ftw",
-        display.bounding_box().center() + Point::new(offset, 15),
+        display.bounding_box().center() + Point::new(0, 15),
         character_style,
         Alignment::Center,
     );
@@ -120,9 +123,9 @@ fn scan_esp(dir: Dir<OpenDevice, DefaultTimeProvider, LossyOemCpConverter>) {
             if name != ".." && name != "." {
                 if entry.is_dir() {
                     scan_esp(entry.to_dir());
-                } else {
+                } else if entry.file_name().ends_with(".efi") {
                     println!("parsing {} of size {}", name, entry.len());
-                    parse_esp_file(entry.to_file(), entry.len());
+                    parse_esp_file(entry.to_file());
                 }
             }
         }
@@ -133,9 +136,10 @@ struct FatFileReadCacheOps<'a> {
     file: File<'a, OpenDevice, DefaultTimeProvider, LossyOemCpConverter>,
 }
 
-impl <'a> ReadCacheOps for FatFileReadCacheOps<'a> {
+impl<'a> ReadCacheOps for FatFileReadCacheOps<'a> {
     fn len(&mut self) -> Result<u64, ()> {
-        self.file.seek(SeekFrom::End(0)).map_err(|_| ())
+        let res = self.file.seek(SeekFrom::End(0)).map_err(|_| ());
+        res
     }
 
     fn seek(&mut self, pos: u64) -> Result<u64, ()> {
@@ -151,12 +155,38 @@ impl <'a> ReadCacheOps for FatFileReadCacheOps<'a> {
     }
 }
 
-fn parse_esp_file(mut file: File<OpenDevice, DefaultTimeProvider, LossyOemCpConverter>, _size: u64) {
-    let reader = ReadCache::new(FatFileReadCacheOps{file});
+fn parse_esp_file(file: File<OpenDevice, DefaultTimeProvider, LossyOemCpConverter>) {
+    let reader = ReadCache::new(FatFileReadCacheOps { file });
     if let Ok(obj) = object::File::parse(&reader) {
         for section in obj.sections() {
             if section.name().is_ok_and(|sec| sec == ".cmdline") {
                 println!("cmdline is: {:?}", core::str::from_utf8(section.data().unwrap()).unwrap());
+            }
+            if section.name().is_ok_and(|sec| sec == ".osrel") {
+                println!("osrel is: {:?}", core::str::from_utf8(section.data().unwrap()).unwrap());
+            }
+            if section.name().is_ok_and(|sec| sec == ".splash") {
+                match section.data() {
+                    Ok(data) => {
+                        println!("loaded bmp data: {}", data.len());
+                        let mut display = fbcon::get().unwrap();
+                        match Bmp::<Rgb888>::from_slice(data) {
+                            Ok(bmp) => {
+                                let mut pos = Point::zero();
+                                pos.x = display.bounding_box().center().x - (bmp.size().width as i32) / 2;
+                                pos.y = display.bounding_box().bottom_right().unwrap().y - bmp.size().height as i32;
+                                let img = Image::new(&bmp, pos);
+                                let _ = img.draw(&mut display);
+                            }
+                            Err(e) => {
+                                println!("noes :< {:?}", e);
+                            }
+                        }
+                    }
+                    Err(err) => {
+                        println!("shiet: {}", err);
+                    }
+                }
             }
         }
     }

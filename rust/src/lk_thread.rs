@@ -1,5 +1,5 @@
 use alloc::ffi::CString;
-use core::ffi::{c_int, c_ulong};
+use core::ffi::c_ulong;
 use core::ptr::null_mut;
 use core::time::Duration;
 
@@ -28,7 +28,8 @@ pub fn sleep(dur: Duration) {
 }
 
 mod sys {
-    use core::ffi::{c_char, c_int, c_longlong, c_ulong, c_void};
+    #![allow(non_camel_case_types)]
+    use core::ffi::{c_char, c_int, c_ulong, c_void};
 
     const NUM_PRIORITIES: c_int = 32;
     pub const DEFAULT_PRIORITY: c_int = NUM_PRIORITIES / 2;

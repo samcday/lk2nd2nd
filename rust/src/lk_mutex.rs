@@ -1,4 +1,3 @@
-use core::ffi::c_void;
 use core::marker::PhantomData;
 
 #[repr(C)]
@@ -26,11 +25,12 @@ pub fn acquire(mutex: *mut Mutex) -> Result<MutexGuard, ()> {
     if ret != 0 {
         return Err(());
     }
-    Ok(MutexGuard{mutex})
+    Ok(MutexGuard { mutex })
 }
 
 mod sys {
     use core::ffi::c_int;
+
     use crate::lk_mutex::Mutex;
 
     extern "C" {
