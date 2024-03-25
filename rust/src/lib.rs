@@ -3,7 +3,6 @@
 extern crate alloc;
 
 mod bio;
-mod fat_readcache;
 mod fmt;
 mod lk_alloc;
 mod lk_list;
@@ -14,11 +13,9 @@ mod fbcon;
 
 use core::time::Duration;
 use crate::bio::{LkBlockDev, OpenDevice};
-use crate::fat_readcache::ReadCache;
 
-use fatfs::{DefaultTimeProvider, Dir, File, LossyOemCpConverter};
-use object::{Object, ObjectSection};
-use crate::fbcon::fbcon_display;
+use fatfs::{DefaultTimeProvider, Dir, File, LossyOemCpConverter, Read, Seek, SeekFrom};
+use object::{Object, ObjectSection, ReadCache, ReadCacheOps};
 use crate::lk_thread::sleep;
 
 use embedded_graphics::{
@@ -31,7 +28,6 @@ use embedded_graphics::{
     text::{Alignment, Text},
 };
 use embedded_graphics::pixelcolor::Rgb888;
-use embedded_graphics::text::TextStyle;
 use embedded_vintage_fonts::FONT_24X32;
 
 #[no_mangle]
@@ -57,7 +53,6 @@ pub extern "C" fn boot_scan() {
         }
         lk_thread::exit()
     });
-
 
     let mut display = fbcon::get().unwrap();
     display.clear(Rgb888::CSS_BLACK).unwrap();
@@ -134,8 +129,30 @@ fn scan_esp(dir: Dir<OpenDevice, DefaultTimeProvider, LossyOemCpConverter>) {
     }
 }
 
-fn parse_esp_file(file: File<OpenDevice, DefaultTimeProvider, LossyOemCpConverter>, _size: u64) {
-    let reader = ReadCache::new(file);
+struct FatFileReadCacheOps<'a> {
+    file: File<'a, OpenDevice, DefaultTimeProvider, LossyOemCpConverter>,
+}
+
+impl <'a> ReadCacheOps for FatFileReadCacheOps<'a> {
+    fn len(&mut self) -> Result<u64, ()> {
+        self.file.seek(SeekFrom::End(0)).map_err(|_| ())
+    }
+
+    fn seek(&mut self, pos: u64) -> Result<u64, ()> {
+        self.file.seek(SeekFrom::Start(pos)).map_err(|_| ())
+    }
+
+    fn read(&mut self, buf: &mut [u8]) -> Result<usize, ()> {
+        self.file.read(buf).map_err(|_| ())
+    }
+
+    fn read_exact(&mut self, buf: &mut [u8]) -> Result<(), ()> {
+        self.file.read_exact(buf).map_err(|_| ())
+    }
+}
+
+fn parse_esp_file(mut file: File<OpenDevice, DefaultTimeProvider, LossyOemCpConverter>, _size: u64) {
+    let reader = ReadCache::new(FatFileReadCacheOps{file});
     if let Ok(obj) = object::File::parse(&reader) {
         for section in obj.sections() {
             if section.name().is_ok_and(|sec| sec == ".cmdline") {

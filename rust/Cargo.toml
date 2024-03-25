@@ -15,7 +15,7 @@ panic = "abort"
 [dependencies]
 r-efi = "4.3.0"
 fatfs = { default-features = false, features = ["alloc", "lfn"], git = "https://github.com/rafalh/rust-fatfs", rev = "1aa43f7" }
-object = { version = "0.34.0", default-features = false, features = ["read_core", "pe"] }
-memchr = { version = "2.7.1", default-features = false }
+#object = { version = "0.34.0", default-features = false, features = ["read_core", "pe"] }
+object = { version = "0.34.0", default-features = false, features = ["read_core", "pe", "no_std"], git = "https://github.com/philipc/object", branch = "issue-652" }
 embedded-graphics = { version = "0.8.1", default-features = false }
 embedded-vintage-fonts = "0.2.0"

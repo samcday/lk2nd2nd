@@ -4,6 +4,7 @@ use crate::println;
 use core::ffi::{c_char, c_int, c_long, c_longlong, c_uint, c_ulong, c_void, CStr};
 
 use fatfs::{IoBase, Read, Seek, SeekFrom, Write};
+use object::ReadCacheOps;
 use crate::lk_mutex::{acquire, Mutex, MutexGuard};
 
 #[repr(C)]
