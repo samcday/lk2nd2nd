@@ -259,6 +259,8 @@ enum BootError {
     Io,
     #[snafu(display("loaded kernel had invalid magic"))]
     InvalidKernel,
+    #[snafu(display("DTB exceeds maximum 2MB"))]
+    DtbTooBig,
     Failed,
 }
 
@@ -269,50 +271,53 @@ fn boot(
     mut file: fatfs::File<OpenDevice, DefaultTimeProvider, LossyOemCpConverter>,
     config: BootConfig,
 ) -> Result<(), BootError> {
-    let base = unsafe { get_ddr_start() } as *mut u8;
+    // DTB may not exceed 2mb.
+    if config.dtb.1 > 2*1024*1024 {
+        return Err(BootError::DtbTooBig);
+    }
 
-    // TODO: I'm unsure if the alignment needs to be to page size. If it is, should set this based
-    // on bit 1-2 of flags in kernel header.
-    let align = 4096;
-    // TODO: this is how much memory is kept free after kernel image. Lower values don't boot, but
-    // I don't understand why. Once I have UART for earlycon, maybe I'll figure it out.
-    let kernel_pad = 1024 * 1024 * 32;
+    let base = unsafe { get_ddr_start() } as u64;
 
-    // Load kernel into base of DRAM.
     let (start, size) = config.kernel;
-    let kernel_size = size as usize;
-    // TODO: respect text_offset in kernel header
-    let kernel_addr = base;
-    let kernel = unsafe { &mut *slice_from_raw_parts_mut(kernel_addr, kernel_size) };
-    file.seek(SeekFrom::Start(start))
-        .map_err(|_| BootError::Io)?;
-    file.read_exact(kernel).map_err(|_| BootError::Io)?;
-
-    // Basic check that kernel image loaded correctly ("magic" u32 in kernel header)
-    let magic = LittleEndian::read_u32(&kernel[56..60]);
+    // Read text_offset + image_size + magic from kernel header
+    let mut buf = [0; 8];
+    file.seek(SeekFrom::Start(start + 8)).map_err(|_| BootError::Io)?;
+    file.read_exact(&mut buf).map_err(|_| BootError::Io)?;
+    let text_offset = LittleEndian::read_u64(&buf);
+    file.read_exact(&mut buf).map_err(|_| BootError::Io)?;
+    let image_size = LittleEndian::read_u64(&buf);
+    file.seek(SeekFrom::Current(32)).map_err(|_| BootError::Io)?;
+    file.read_exact(&mut buf[0..4]).map_err(|_| BootError::Io)?;
+    let magic = LittleEndian::read_u32(&buf);
     if magic != 0x644d5241 {
         return Err(BootError::InvalidKernel);
     }
 
+    // Load kernel into base of DRAM.
+    let kernel_addr = base + text_offset;
+    let kernel = unsafe { &mut *slice_from_raw_parts_mut(kernel_addr as *mut u8, size as usize) };
+    file.seek(SeekFrom::Start(start)).map_err(|_| BootError::Io)?;
+    file.read_exact(kernel).map_err(|_| BootError::Io)?;
+
     // Load DTB after kernel image.
-    let dtb_addr = unsafe {
-        let v = kernel_addr.add(kernel_size).add(kernel_pad);
-        v.add(v.align_offset(align))
-    };
-    let (start, size) = config.dtb;
-    let dtb_size = size as usize;
-    let dtb = unsafe { &mut *slice_from_raw_parts_mut(dtb_addr, dtb_size) };
+    let mut dtb_addr = kernel_addr + image_size;
+    // DTB must be in its own 2MB region.
+    dtb_addr += 2*1024*1024;
+    // DTB address must be 8-byte aligned.
+    dtb_addr += 8;
+    dtb_addr &= !0b111;
+    let (start, dtb_size) = config.dtb;
+    let dtb = unsafe { &mut *slice_from_raw_parts_mut(dtb_addr as *mut u8, dtb_size as usize) };
     file.seek(SeekFrom::Start(start))
         .map_err(|_| BootError::Io)?;
     file.read_exact(dtb).map_err(|_| BootError::Io)?;
 
     // Load initrd.
-    let initrd_addr = unsafe {
-        let v = dtb_addr.add(dtb_size);
-        v.add(v.align_offset(align))
-    };
+    // Place initrd exactly 2mb after the start of DTB. This way we know that a) the initramfs is
+    // not overlapping the special DTB 2mb region and b) is already aligned.
+    let initrd_addr = dtb_addr + 2*1024*1024;
     let (start, initrd_size) = config.initrd;
-    let initrd = unsafe { &mut *slice_from_raw_parts_mut(initrd_addr, initrd_size as usize) };
+    let initrd = unsafe { &mut *slice_from_raw_parts_mut(initrd_addr as *mut u8, initrd_size as usize) };
     file.seek(SeekFrom::Start(start))
         .map_err(|_| BootError::Io)?;
     file.read_exact(initrd).map_err(|_| BootError::Io)?;
