@@ -1,9 +1,9 @@
 use core::ffi::{c_char, c_int, c_long, c_longlong, c_uint, c_ulong, c_void, CStr};
 
-use fatfs::{IoBase, Read, Seek, SeekFrom, Write};
 use crate::lk_list::{list_node, LkListIterator};
 use crate::lk_mutex::{acquire, Mutex, MutexGuard};
 use crate::println;
+use fatfs::{IoBase, Read, Seek, SeekFrom, Write};
 
 #[repr(C)]
 #[derive(Debug)]
@@ -120,7 +120,9 @@ pub fn get_bdevs<'a>() -> Option<BlockDevIterator<'a>> {
         } else {
             None
         }
-    } else { None }
+    } else {
+        None
+    }
 }
 
 pub fn open(name: &CStr) -> Option<OpenDevice> {

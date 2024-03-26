@@ -12,7 +12,9 @@ pub struct MutexGuard {
 
 impl Drop for MutexGuard {
     fn drop(&mut self) {
-        unsafe { sys::mutex_release(self.mutex); }
+        unsafe {
+            sys::mutex_release(self.mutex);
+        }
     }
 }
 

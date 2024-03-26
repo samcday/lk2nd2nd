@@ -2,29 +2,26 @@
 
 extern crate alloc;
 
-use alloc::boxed::Box;
 use alloc::ffi::CString;
-use alloc::string::{String, ToString};
+use alloc::string::ToString;
 use alloc::vec;
 use core::ffi::{c_char, c_uint, c_void};
-use core::ops::Add;
 use core::ptr::slice_from_raw_parts_mut;
 use core::time::Duration;
 
 use byteorder::{ByteOrder, LittleEndian};
+use embedded_graphics::image::Image;
+use embedded_graphics::pixelcolor::Rgb888;
 use embedded_graphics::{
-    mono_font::MonoTextStyle
-    ,
+    mono_font::MonoTextStyle,
     prelude::*,
     primitives::{
         Circle, PrimitiveStyle, PrimitiveStyleBuilder, Rectangle, StrokeAlignment, Triangle,
     },
     text::{Alignment, Text},
 };
-use embedded_graphics::image::Image;
-use embedded_graphics::pixelcolor::Rgb888;
 use embedded_vintage_fonts::FONT_24X32;
-use fatfs::{DefaultTimeProvider, Dir, IoError, LossyOemCpConverter, Read, Seek, SeekFrom};
+use fatfs::{DefaultTimeProvider, Dir, LossyOemCpConverter, Read, Seek, SeekFrom};
 use object::{File, Object, ObjectSection, ReadCache, ReadCacheOps};
 use snafu::prelude::*;
 use tinybmp::Bmp;
@@ -33,18 +30,19 @@ use crate::bio::OpenDevice;
 use crate::lk_thread::sleep;
 
 mod bio;
+mod fbcon;
 mod fmt;
 mod lk_alloc;
 mod lk_list;
-mod panic;
-mod lk_thread;
 mod lk_mutex;
-mod fbcon;
+mod lk_thread;
+mod panic;
 
 #[no_mangle]
 pub extern "C" fn boot_scan() {
     lk_thread::spawn("boot-scan", || {
-        let esp_dev = bio::get_bdevs().unwrap()
+        let esp_dev = bio::get_bdevs()
+            .unwrap()
             .find(|dev| dev.label().is_some_and(|label| label.eq(c"esp")));
 
         if let Some(esp_dev) = esp_dev {
@@ -93,7 +91,8 @@ pub extern "C" fn boot_scan() {
     display
         .bounding_box()
         .into_styled(border_stroke)
-        .draw(&mut display).unwrap();
+        .draw(&mut display)
+        .unwrap();
 
     let yoffset = 14;
 
@@ -103,21 +102,26 @@ pub extern "C" fn boot_scan() {
         Point::new(16 + 16, 16 + yoffset),
         Point::new(16 + 8, yoffset),
     )
-        .into_styled(thin_stroke)
-        .draw(&mut display).unwrap();
+    .into_styled(thin_stroke)
+    .draw(&mut display)
+    .unwrap();
 
     // Draw a filled square
     Rectangle::new(Point::new(52, yoffset), Size::new(16, 16))
         .into_styled(fill)
-        .draw(&mut display).unwrap();
+        .draw(&mut display)
+        .unwrap();
 
     // Draw a circle with a 3px wide stroke.
     Circle::new(Point::new(88, yoffset), 17)
         .into_styled(thick_stroke)
-        .draw(&mut display).unwrap();
+        .draw(&mut display)
+        .unwrap();
 
     // Draw centered text
-    display.fill_solid(&text.bounding_box(), Rgb888::CSS_BLACK).unwrap();
+    display
+        .fill_solid(&text.bounding_box(), Rgb888::CSS_BLACK)
+        .unwrap();
     text.draw(&mut display).unwrap();
 
     loop {
@@ -138,7 +142,7 @@ fn scan_esp(dir: Dir<OpenDevice, DefaultTimeProvider, LossyOemCpConverter>) {
                     match parse_uki(file.clone()) {
                         Ok(config) => {
                             if let Some(splash) = config.splash {
-                                let u = show_splash(file.clone(), splash);
+                                let _u = show_splash(file.clone(), splash);
                             }
                             if let Err(err) = boot(file.clone(), config) {
                                 println!("oof: {:?}", err)
@@ -186,28 +190,41 @@ struct BootConfig {
 
 #[derive(Debug, Snafu)]
 enum UkiParseError {
-    #[snafu(display("failed to parse object file"))] InvalidObject,
-    #[snafu(display("kernel not found"))] KernelNotFound,
-    #[snafu(display("initramfs not found"))] InitrdNotFound,
-    #[snafu(display("DTB not found"))] DtbNotFound,
+    #[snafu(display("failed to parse object file"))]
+    InvalidObject,
+    #[snafu(display("kernel not found"))]
+    KernelNotFound,
+    #[snafu(display("initramfs not found"))]
+    InitrdNotFound,
+    #[snafu(display("DTB not found"))]
+    DtbNotFound,
 }
 
-fn parse_uki(file: fatfs::File<OpenDevice, DefaultTimeProvider, LossyOemCpConverter>) -> Result<BootConfig, UkiParseError> {
+fn parse_uki(
+    file: fatfs::File<OpenDevice, DefaultTimeProvider, LossyOemCpConverter>,
+) -> Result<BootConfig, UkiParseError> {
     let reader = ReadCache::new(FatFileReadCacheOps { file: file.clone() });
     let obj = File::parse(&reader).map_err(|_| UkiParseError::InvalidObject)?;
 
-    let kernel = obj.section_by_name(".linux")
-        .and_then(|v| v.file_range()).ok_or(UkiParseError::KernelNotFound)?;
+    let kernel = obj
+        .section_by_name(".linux")
+        .and_then(|v| v.file_range())
+        .ok_or(UkiParseError::KernelNotFound)?;
 
-    let initrd = obj.section_by_name(".initrd")
-        .and_then(|v| v.file_range()).ok_or(UkiParseError::InitrdNotFound)?;
+    let initrd = obj
+        .section_by_name(".initrd")
+        .and_then(|v| v.file_range())
+        .ok_or(UkiParseError::InitrdNotFound)?;
 
     // TODO: multiple dtbs
     // TODO: check picked DTB size
-    let dtb = obj.section_by_name(".dtb")
-        .and_then(|v| v.file_range()).ok_or(UkiParseError::DtbNotFound)?;
+    let dtb = obj
+        .section_by_name(".dtb")
+        .and_then(|v| v.file_range())
+        .ok_or(UkiParseError::DtbNotFound)?;
 
-    let commandline = obj.section_by_name(".cmdline")
+    let commandline = obj
+        .section_by_name(".cmdline")
         .and_then(|v| v.data().ok())
         .and_then(|v| CString::new(v).ok());
 
@@ -225,10 +242,15 @@ fn parse_uki(file: fatfs::File<OpenDevice, DefaultTimeProvider, LossyOemCpConver
 extern "C" {
     fn get_ddr_start() -> c_uint;
 
-    fn boot_linux(kernel: *mut c_void, tags: *mut c_void,
-                  cmdline: *const c_char, machtype: c_uint,
-                  ramdisk: *mut c_void, ramdisk_size: c_uint,
-                  boot_type: c_uint);
+    fn boot_linux(
+        kernel: *mut c_void,
+        tags: *mut c_void,
+        cmdline: *const c_char,
+        machtype: c_uint,
+        ramdisk: *mut c_void,
+        ramdisk_size: c_uint,
+        boot_type: c_uint,
+    );
 
     fn board_machtype() -> c_uint;
 }
@@ -245,7 +267,10 @@ enum BootError {
 // Boot a kernel from provided BootConfig
 // https://docs.kernel.org/arch/arm64/booting.html
 // TODO: currently 64-bit only
-pub fn boot(mut file: fatfs::File<OpenDevice, DefaultTimeProvider, LossyOemCpConverter>, config: BootConfig) -> Result<(), BootError> {
+fn boot(
+    mut file: fatfs::File<OpenDevice, DefaultTimeProvider, LossyOemCpConverter>,
+    config: BootConfig,
+) -> Result<(), BootError> {
     let base = unsafe { get_ddr_start() } as *mut u8;
 
     // TODO: I'm unsure if the alignment needs to be to page size. If it is, should set this based
@@ -253,7 +278,7 @@ pub fn boot(mut file: fatfs::File<OpenDevice, DefaultTimeProvider, LossyOemCpCon
     let align = 4096;
     // TODO: this is how much memory is kept free after kernel image. Lower values don't boot, but
     // I don't understand why. Once I have UART for earlycon, maybe I'll figure it out.
-    let kernel_pad = 1024*1024*32;
+    let kernel_pad = 1024 * 1024 * 32;
 
     // Load kernel into base of DRAM.
     let (start, size) = config.kernel;
@@ -261,7 +286,8 @@ pub fn boot(mut file: fatfs::File<OpenDevice, DefaultTimeProvider, LossyOemCpCon
     // TODO: respect text_offset in kernel header
     let kernel_addr = base;
     let kernel = unsafe { &mut *slice_from_raw_parts_mut(kernel_addr, kernel_size) };
-    file.seek(SeekFrom::Start(start)).map_err(|_| BootError::Io)?;
+    file.seek(SeekFrom::Start(start))
+        .map_err(|_| BootError::Io)?;
     file.read_exact(kernel).map_err(|_| BootError::Io)?;
 
     // Basic check that kernel image loaded correctly ("magic" u32 in kernel header)
@@ -271,14 +297,15 @@ pub fn boot(mut file: fatfs::File<OpenDevice, DefaultTimeProvider, LossyOemCpCon
     }
 
     // Load DTB after kernel image.
-    let mut dtb_addr = unsafe {
+    let dtb_addr = unsafe {
         let v = kernel_addr.add(kernel_size).add(kernel_pad);
         v.add(v.align_offset(align))
     };
     let (start, size) = config.dtb;
     let dtb_size = size as usize;
     let dtb = unsafe { &mut *slice_from_raw_parts_mut(dtb_addr, dtb_size) };
-    file.seek(SeekFrom::Start(start)).map_err(|_| BootError::Io)?;
+    file.seek(SeekFrom::Start(start))
+        .map_err(|_| BootError::Io)?;
     file.read_exact(dtb).map_err(|_| BootError::Io)?;
 
     // Load initrd.
@@ -288,7 +315,8 @@ pub fn boot(mut file: fatfs::File<OpenDevice, DefaultTimeProvider, LossyOemCpCon
     };
     let (start, initrd_size) = config.initrd;
     let initrd = unsafe { &mut *slice_from_raw_parts_mut(initrd_addr, initrd_size as usize) };
-    file.seek(SeekFrom::Start(start)).map_err(|_| BootError::Io)?;
+    file.seek(SeekFrom::Start(start))
+        .map_err(|_| BootError::Io)?;
     file.read_exact(initrd).map_err(|_| BootError::Io)?;
 
     // Making sure it really is this code that booted the kernel ;)
@@ -298,14 +326,25 @@ pub fn boot(mut file: fatfs::File<OpenDevice, DefaultTimeProvider, LossyOemCpCon
 
     // Do the boot!
     unsafe {
-        boot_linux(base as *mut _, dtb_addr as *mut _, wow.as_c_str().as_ptr(), board_machtype(), initrd_addr as *mut _, initrd_size  as c_uint, 0)
+        boot_linux(
+            base as *mut _,
+            dtb_addr as *mut _,
+            wow.as_c_str().as_ptr(),
+            board_machtype(),
+            initrd_addr as *mut _,
+            initrd_size as c_uint,
+            0,
+        )
     }
 
     // If we got here then the boot failed.
     Err(BootError::Failed)
 }
 
-fn show_splash(mut file: fatfs::File<OpenDevice, DefaultTimeProvider, LossyOemCpConverter>, (start, size): (u64, u64)) -> Result<(), ()> {
+fn show_splash(
+    mut file: fatfs::File<OpenDevice, DefaultTimeProvider, LossyOemCpConverter>,
+    (start, size): (u64, u64),
+) -> Result<(), ()> {
     let mut splash = vec![0; size as usize];
     file.seek(SeekFrom::Start(start)).map_err(|_| ())?;
     file.read_exact(&mut splash).map_err(|_| ())?;

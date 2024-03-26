@@ -4,10 +4,10 @@ use core::ptr::slice_from_raw_parts_mut;
 
 use embedded_graphics::draw_target::DrawTarget;
 use embedded_graphics::geometry::{Dimensions, Size};
-use embedded_graphics::Pixel;
 use embedded_graphics::pixelcolor::{Rgb888, RgbColor};
 use embedded_graphics::prelude::Point;
 use embedded_graphics::primitives::Rectangle;
+use embedded_graphics::Pixel;
 
 pub struct FbCon888<'a> {
     width: u32,
@@ -26,7 +26,10 @@ impl<'a> DrawTarget for FbCon888<'a> {
     type Color = Rgb888;
     type Error = Infallible;
 
-    fn draw_iter<I>(&mut self, pixels: I) -> Result<(), Self::Error> where I: IntoIterator<Item=Pixel<Self::Color>> {
+    fn draw_iter<I>(&mut self, pixels: I) -> Result<(), Self::Error>
+    where
+        I: IntoIterator<Item = Pixel<Self::Color>>,
+    {
         for pixel in pixels {
             let c = pixel.1;
             let p = pixel.0;
@@ -53,7 +56,10 @@ pub fn get<'a>() -> Option<FbCon888<'a>> {
             width: fbcon.width,
             height: fbcon.height,
             stride: fbcon.stride as usize,
-            buf: &mut *slice_from_raw_parts_mut(fbcon.buf.cast(), (fbcon.stride * fbcon.height * 3) as usize),
+            buf: &mut *slice_from_raw_parts_mut(
+                fbcon.buf.cast(),
+                (fbcon.stride * fbcon.height * 3) as usize,
+            ),
         })
     }
 }

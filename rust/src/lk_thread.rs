@@ -6,16 +6,24 @@ use core::time::Duration;
 pub fn spawn(name: &str, f: fn() -> !) -> bool {
     let name = match CString::new(name) {
         Ok(name) => name.as_ptr(),
-        Err(_) => return false
+        Err(_) => return false,
     };
 
     let thr = unsafe {
-        sys::thread_create(name, core::intrinsics::transmute(f as *const fn()), null_mut(), sys::DEFAULT_PRIORITY, sys::DEFAULT_STACK_SIZE)
+        sys::thread_create(
+            name,
+            core::intrinsics::transmute(f as *const fn()),
+            null_mut(),
+            sys::DEFAULT_PRIORITY,
+            sys::DEFAULT_STACK_SIZE,
+        )
     };
     if thr.is_null() {
         return false;
     }
-    unsafe { sys::thread_resume(thr); }
+    unsafe {
+        sys::thread_resume(thr);
+    }
     return true;
 }
 
@@ -24,7 +32,9 @@ pub fn exit() -> ! {
 }
 
 pub fn sleep(dur: Duration) {
-    unsafe { sys::thread_sleep(dur.as_millis() as c_ulong); }
+    unsafe {
+        sys::thread_sleep(dur.as_millis() as c_ulong);
+    }
 }
 
 mod sys {
@@ -40,7 +50,13 @@ mod sys {
     >;
 
     extern "C" {
-        pub fn thread_create(name: *const c_char, entry: thread_start_routine, arg: *mut c_void, priority: c_int, stack_size: usize) -> *mut c_void;
+        pub fn thread_create(
+            name: *const c_char,
+            entry: thread_start_routine,
+            arg: *mut c_void,
+            priority: c_int,
+            stack_size: usize,
+        ) -> *mut c_void;
         pub fn thread_resume(arg1: *mut c_void) -> c_int;
         pub fn thread_sleep(delay: c_ulong);
         pub fn thread_exit(code: c_int) -> !;
