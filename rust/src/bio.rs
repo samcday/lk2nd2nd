@@ -128,7 +128,7 @@ pub fn get_bdevs<'a>() -> Option<BlockDevIterator<'a>> {
 pub fn open(name: &CStr) -> Option<OpenDevice> {
     let dev = unsafe { sys::bio_open(name.as_ptr()) };
 
-    return if dev.is_null() {
+    if dev.is_null() {
         None
     } else {
         let dev_ref = unsafe { &mut *dev };
@@ -137,7 +137,7 @@ pub fn open(name: &CStr) -> Option<OpenDevice> {
             read_pos: 0,
             size: dev_ref.size,
         })
-    };
+    }
 }
 
 mod sys {

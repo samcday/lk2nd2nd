@@ -22,7 +22,7 @@ impl<'a, T> LkListIterator<'a, T> {
     pub fn new(list: *mut list_node) -> Self {
         Self {
             head: list,
-            cur: (&unsafe { *list }.next).cast(),
+            cur: unsafe { *list }.next.cast(),
             _marker: PhantomData,
         }
     }

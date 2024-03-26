@@ -24,7 +24,7 @@ pub fn spawn(name: &str, f: fn() -> !) -> bool {
     unsafe {
         sys::thread_resume(thr);
     }
-    return true;
+    true
 }
 
 pub fn exit() -> ! {

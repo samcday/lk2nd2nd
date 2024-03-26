@@ -130,26 +130,24 @@ pub extern "C" fn boot_scan() {
 }
 
 fn scan_esp(dir: Dir<OpenDevice, DefaultTimeProvider, LossyOemCpConverter>) {
-    for entry in dir.iter() {
-        if let Ok(entry) = entry {
-            let name = entry.file_name();
-            if name != ".." && name != "." {
-                if entry.is_dir() {
-                    scan_esp(entry.to_dir());
-                } else if entry.file_name().ends_with(".efi") {
-                    println!("parsing {} of size {}", name, entry.len());
-                    let file = entry.to_file();
-                    match parse_uki(file.clone()) {
-                        Ok(config) => {
-                            if let Some(splash) = config.splash {
-                                let _u = show_splash(file.clone(), splash);
-                            }
-                            if let Err(err) = boot(file.clone(), config) {
-                                println!("oof: {:?}", err)
-                            }
+    for entry in dir.iter().flatten() {
+        let name = entry.file_name();
+        if name != ".." && name != "." {
+            if entry.is_dir() {
+                scan_esp(entry.to_dir());
+            } else if entry.file_name().ends_with(".efi") {
+                println!("parsing {} of size {}", name, entry.len());
+                let file = entry.to_file();
+                match parse_uki(file.clone()) {
+                    Ok(config) => {
+                        if let Some(splash) = config.splash {
+                            let _u = show_splash(file.clone(), splash);
                         }
-                        Err(err) => println!("oof: {:?}", err),
+                        if let Err(err) = boot(file.clone(), config) {
+                            println!("oof: {:?}", err)
+                        }
                     }
+                    Err(err) => println!("oof: {:?}", err),
                 }
             }
         }
@@ -162,8 +160,8 @@ struct FatFileReadCacheOps<'a> {
 
 impl<'a> ReadCacheOps for FatFileReadCacheOps<'a> {
     fn len(&mut self) -> Result<u64, ()> {
-        let res = self.file.seek(SeekFrom::End(0)).map_err(|_| ());
-        res
+        
+        self.file.seek(SeekFrom::End(0)).map_err(|_| ())
     }
 
     fn seek(&mut self, pos: u64) -> Result<u64, ()> {
@@ -321,7 +319,7 @@ fn boot(
 
     // Making sure it really is this code that booted the kernel ;)
     let mut wow = config.commandline.unwrap().to_string_lossy().to_string();
-    wow = wow + " haha cool";
+    wow += " haha cool";
     let wow = CString::new(wow).unwrap();
 
     // Do the boot!

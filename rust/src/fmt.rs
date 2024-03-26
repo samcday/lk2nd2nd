@@ -8,13 +8,13 @@ extern "C" {
 #[macro_export]
 macro_rules! println {
     () => {
-        unsafe { crate::fmt::_dputc('\n' as core::ffi::c_char); }
+        unsafe { $crate::fmt::_dputc('\n' as core::ffi::c_char); }
     };
     ($($arg:tt)*) => {{
         unsafe {
             let str = alloc::ffi::CString::new(alloc::format!($($arg)*).as_str()).unwrap();
-            crate::fmt::_dputs(str.as_ptr());
-            crate::fmt::_dputc('\n' as core::ffi::c_char);
+            $crate::fmt::_dputs(str.as_ptr());
+            $crate::fmt::_dputc('\n' as core::ffi::c_char);
         }
     }};
 }
