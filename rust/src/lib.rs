@@ -5,7 +5,9 @@ extern crate alloc;
 use alloc::boxed::Box;
 use alloc::ffi::CString;
 use alloc::string::{String, ToString};
+use alloc::vec;
 use core::ffi::{c_char, c_uint, c_void};
+use core::ops::Add;
 use core::ptr::slice_from_raw_parts_mut;
 use core::time::Duration;
 
@@ -134,8 +136,13 @@ fn scan_esp(dir: Dir<OpenDevice, DefaultTimeProvider, LossyOemCpConverter>) {
                     println!("parsing {} of size {}", name, entry.len());
                     let file = entry.to_file();
                     match parse_uki(file.clone()) {
-                        Ok(config) => if let Err(err) = boot(file.clone(), config) {
-                            println!("oof: {:?}", err)
+                        Ok(config) => {
+                            if let Some(splash) = config.splash {
+                                let u = show_splash(file.clone(), splash);
+                            }
+                            if let Err(err) = boot(file.clone(), config) {
+                                println!("oof: {:?}", err)
+                            }
                         }
                         Err(err) => println!("oof: {:?}", err),
                     }
@@ -232,73 +239,82 @@ enum BootError {
     Io,
     #[snafu(display("loaded kernel had invalid magic"))]
     InvalidKernel,
+    Failed,
 }
 
+// Boot a kernel from provided BootConfig
+// https://docs.kernel.org/arch/arm64/booting.html
+// TODO: currently 64-bit only
 pub fn boot(mut file: fatfs::File<OpenDevice, DefaultTimeProvider, LossyOemCpConverter>, config: BootConfig) -> Result<(), BootError> {
     let base = unsafe { get_ddr_start() } as *mut u8;
 
-    let align = 1024*1024*32;
+    // TODO: I'm unsure if the alignment needs to be to page size. If it is, should set this based
+    // on bit 1-2 of flags in kernel header.
+    let align = 4096;
+    // TODO: this is how much memory is kept free after kernel image. Lower values don't boot, but
+    // I don't understand why. Once I have UART for earlycon, maybe I'll figure it out.
+    let kernel_pad = 1024*1024*32;
 
-    // TODO: respect text_offset
+    // Load kernel into base of DRAM.
     let (start, size) = config.kernel;
     let kernel_size = size as usize;
-    let kernel = unsafe { &mut *slice_from_raw_parts_mut(base, kernel_size) };
+    // TODO: respect text_offset in kernel header
+    let kernel_addr = base;
+    let kernel = unsafe { &mut *slice_from_raw_parts_mut(kernel_addr, kernel_size) };
     file.seek(SeekFrom::Start(start)).map_err(|_| BootError::Io)?;
     file.read_exact(kernel).map_err(|_| BootError::Io)?;
 
+    // Basic check that kernel image loaded correctly ("magic" u32 in kernel header)
     let magic = LittleEndian::read_u32(&kernel[56..60]);
     if magic != 0x644d5241 {
         return Err(BootError::InvalidKernel);
     }
 
-    let dtb_addr = unsafe { base.add(kernel_size).add(kernel_size % align) };
-    // let dtb_addr = 0x82000000 as *mut u8;
+    // Load DTB after kernel image.
+    let mut dtb_addr = unsafe {
+        let v = kernel_addr.add(kernel_size).add(kernel_pad);
+        v.add(v.align_offset(align))
+    };
     let (start, size) = config.dtb;
     let dtb_size = size as usize;
     let dtb = unsafe { &mut *slice_from_raw_parts_mut(dtb_addr, dtb_size) };
     file.seek(SeekFrom::Start(start)).map_err(|_| BootError::Io)?;
     file.read_exact(dtb).map_err(|_| BootError::Io)?;
 
-    let initrd_addr = unsafe { dtb_addr.add(dtb_size).add(dtb_size % 4096) };
-    // let initrd_addr = 0x82200000 as *mut u8;
+    // Load initrd.
+    let initrd_addr = unsafe {
+        let v = dtb_addr.add(dtb_size);
+        v.add(v.align_offset(align))
+    };
     let (start, initrd_size) = config.initrd;
     let initrd = unsafe { &mut *slice_from_raw_parts_mut(initrd_addr, initrd_size as usize) };
     file.seek(SeekFrom::Start(start)).map_err(|_| BootError::Io)?;
     file.read_exact(initrd).map_err(|_| BootError::Io)?;
 
+    // Making sure it really is this code that booted the kernel ;)
     let mut wow = config.commandline.unwrap().to_string_lossy().to_string();
     wow = wow + " haha cool";
     let wow = CString::new(wow).unwrap();
 
-    unsafe { boot_linux(base as *mut _, dtb_addr as *mut _, wow.as_c_str().as_ptr(), board_machtype(), initrd_addr as *mut _, initrd_size  as c_uint, 0) }
+    // Do the boot!
+    unsafe {
+        boot_linux(base as *mut _, dtb_addr as *mut _, wow.as_c_str().as_ptr(), board_machtype(), initrd_addr as *mut _, initrd_size  as c_uint, 0)
+    }
 
-    Ok(())
+    // If we got here then the boot failed.
+    Err(BootError::Failed)
 }
 
-fn show_splash() {
-    // for section in obj.sections() {
-    //     if section.name().is_ok_and(|sec| sec == ".splash") {
-    //         match section.data() {
-    //             Ok(data) => {
-    //                 println!("loaded bmp data: {}", data.len());
-    //                 let mut display = fbcon::get().unwrap();
-    //                 match Bmp::<Rgb888>::from_slice(data) {
-    //                     Ok(bmp) => {
-    //                         let mut pos = Point::zero();
-    //                         pos.x = display.bounding_box().center().x - (bmp.size().width as i32) / 2;
-    //                         pos.y = display.bounding_box().bottom_right().unwrap().y - bmp.size().height as i32;
-    //                         let img = Image::new(&bmp, pos);
-    //                         let _ = img.draw(&mut display);
-    //                     }
-    //                     Err(e) => {
-    //                         println!("noes :< {:?}", e);
-    //                     }
-    //                 }
-    //             }
-    //             Err(err) => {
-    //                 println!("shiet: {}", err);
-    //             }
-    //         }
-    //     }
-    // }
+fn show_splash(mut file: fatfs::File<OpenDevice, DefaultTimeProvider, LossyOemCpConverter>, (start, size): (u64, u64)) -> Result<(), ()> {
+    let mut splash = vec![0; size as usize];
+    file.seek(SeekFrom::Start(start)).map_err(|_| ())?;
+    file.read_exact(&mut splash).map_err(|_| ())?;
+
+    let mut display = fbcon::get().ok_or(())?;
+    let bmp = Bmp::<Rgb888>::from_slice(&splash).map_err(|_| ())?;
+    let mut pos = Point::zero();
+    pos.x = display.bounding_box().center().x - (bmp.size().width as i32) / 2;
+    pos.y = display.bounding_box().bottom_right().unwrap().y - bmp.size().height as i32;
+    let img = Image::new(&bmp, pos);
+    img.draw(&mut display).map_err(|_| ())
 }
