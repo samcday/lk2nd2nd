@@ -165,7 +165,7 @@ fn show_splash(
     file.read_exact(&mut splash).map_err(|_| ())?;
 
     let mut display = fbcon::get().ok_or(())?;
-    let bmp = Bmp::<Rgb888>::from_slice(&splash).map_err(|_| ())?;
+    let bmp = Bmp::<Rgb888>::from_slice(&splash).map_err(|_| ())?.with_alpha_bg(Rgb888::CSS_BLACK);
     let mut pos = Point::zero();
     pos.x = display.bounding_box().center().x - (bmp.size().width as i32) / 2;
     pos.y = display.bounding_box().bottom_right().unwrap().y - bmp.size().height as i32;
