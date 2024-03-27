@@ -3,7 +3,7 @@ use core::ffi::{c_uint, c_void};
 
 pub struct LkHeap;
 
-#[global_allocator]
+#[cfg_attr(not(test), global_allocator)]
 static ALLOCATOR: LkHeap = LkHeap;
 
 extern "C" {

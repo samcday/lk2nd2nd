@@ -3,11 +3,12 @@
 extern crate alloc;
 
 use alloc::ffi::CString;
-use alloc::string::ToString;
-use alloc::vec;
-use core::ffi::{c_char, c_uint, c_void};
+use alloc::string::{String, ToString};
+use alloc::{format, vec};
+use core::ffi::{c_char, c_int, c_uint, c_void};
 use core::ptr::slice_from_raw_parts_mut;
 use core::time::Duration;
+use anyhow::{Context, Error};
 
 use byteorder::{ByteOrder, LittleEndian};
 use embedded_graphics::image::Image;
@@ -22,11 +23,11 @@ use embedded_graphics::{
 };
 use embedded_vintage_fonts::FONT_24X32;
 use fatfs::{DefaultTimeProvider, Dir, LossyOemCpConverter, Read, Seek, SeekFrom};
-use object::{File, Object, ObjectSection, ReadCache, ReadCacheOps};
-use snafu::prelude::*;
+use object::{Object, ObjectSection, ReadCacheOps};
 use tinybmp::Bmp;
 
 use crate::bio::OpenDevice;
+use crate::lk_fs::LkFile;
 use crate::lk_thread::sleep;
 
 mod bio;
@@ -38,19 +39,34 @@ mod lk_mutex;
 mod lk_thread;
 mod panic;
 mod kernel_boot;
+mod lk_fs;
+
+// extern "C" {
+//     pub fn parse_conf(data: *mut c_char, size: c_uint, label: *mut c_void) -> c_int;
+// }
+
+fn scan_extlinux(name: &str) -> anyhow::Result<()> {
+    let mountpoint = format!("/{}", name);
+    lk_fs::mount(&mountpoint, "ext2", name).context("ext2 mount failed")?;
+    let file = LkFile::open(&format!("{}/extlinux/extlinux.conf", mountpoint)).map_err(Error::msg).context("open extlinux.conf failed")?;
+    let (_, size) = file.stat().map_err(Error::msg).context("stat extlinux.conf failed")?;
+    let mut data = vec![0; size];
+    file.read(&mut data, 0).context("read extlinux.conf failed")?;
+
+    println!("nice: {:?}", String::from_utf8_lossy(&data));
+    // parse_conf(data.as_mut_ptr() as _, size, )
+
+    Ok(())
+}
 
 #[no_mangle]
 pub extern "C" fn boot_scan() {
     lk_thread::spawn("boot-scan", || {
-        let esp_dev = bio::get_bdevs()
-            .unwrap()
-            .find(|dev| dev.label().is_some_and(|label| label.eq(c"esp")));
-
-        if let Some(esp_dev) = esp_dev {
-            println!("found ESP partition: {:?}", esp_dev.name());
-
-            if let Some(dev) = bio::open(esp_dev.name()) {
-                match fatfs::FileSystem::new(dev, fatfs::FsOptions::new()) {
+        for dev in bio::get_bdevs().unwrap().iter().filter(|dev| dev.is_leaf) {
+            // TODO: expose type GUID in bdev and use that to check for ESP instead.
+            if let Some(esp_dev) = dev.label.clone().filter(|label| label.eq("esp")).and_then(|_| bio::open(&dev.name).ok()) {
+                println!("found ESP partition: {:?}", dev.name);
+                match fatfs::FileSystem::new(esp_dev, fatfs::FsOptions::new()) {
                     Ok(fs) => {
                         let root_dir = fs.root_dir();
                         if let Ok(esp_dir) = root_dir.open_dir("/EFI/") {
@@ -59,10 +75,15 @@ pub extern "C" fn boot_scan() {
                     }
                     Err(e) => println!("noes! {:?}", e),
                 }
-            } else {
-                println!("failed to open :<");
+            }
+
+            match scan_extlinux(&dev.name) {
+                Ok(_) => { println!("worked {}", dev.name); },
+                Err(err) => println!("{} extlinux scan failed: {:?}", &dev.name, err)
             }
         }
+
+        // TODO: check for magic in boot partition
         lk_thread::exit()
     });
 
@@ -144,9 +165,9 @@ fn scan_esp(dir: Dir<OpenDevice, DefaultTimeProvider, LossyOemCpConverter>) {
                         if let Some(splash) = config.splash {
                             let _u = show_splash(file.clone(), splash);
                         }
-                        if let Err(err) = kernel_boot::boot(file.clone(), config) {
-                            println!("oof: {:?}", err)
-                        }
+                        // if let Err(err) = kernel_boot::boot(file.clone(), config) {
+                        //     println!("oof: {:?}", err)
+                        // }
                     }
                     Err(err) => println!("oof: {:?}", err),
                 }
@@ -154,7 +175,6 @@ fn scan_esp(dir: Dir<OpenDevice, DefaultTimeProvider, LossyOemCpConverter>) {
         }
     }
 }
-
 
 fn show_splash(
     mut file: fatfs::File<OpenDevice, DefaultTimeProvider, LossyOemCpConverter>,

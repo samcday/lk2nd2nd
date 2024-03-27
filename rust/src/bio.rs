@@ -1,3 +1,6 @@
+use alloc::ffi::CString;
+use alloc::string::{String, ToString};
+use alloc::vec::Vec;
 use core::ffi::{c_char, c_int, c_long, c_longlong, c_uint, c_ulong, c_void, CStr};
 
 use crate::lk_list::{list_node, LkListIterator};
@@ -5,38 +8,18 @@ use crate::lk_mutex::{acquire, Mutex, MutexGuard};
 use crate::println;
 use fatfs::{IoBase, Read, Seek, SeekFrom, Write};
 
-#[repr(C)]
-#[derive(Debug)]
-pub struct LkBlockDev {
-    // bdev_t
-    node: list_node,
-    _ref: c_int,
-
-    /* info about the block device */
-    name: *mut c_char,
-    pub size: c_longlong,
-    block_size: c_ulong,
-    block_count: c_uint,
-    label: *mut c_char,
-    is_leaf: bool,
-}
-
-impl LkBlockDev {
-    pub fn label(&self) -> Option<&CStr> {
-        if self.label.is_null() {
-            None
-        } else {
-            unsafe { Some(CStr::from_ptr(self.label)) }
-        }
-    }
-
-    pub fn name(&self) -> &CStr {
-        unsafe { CStr::from_ptr(self.name) }
-    }
+#[derive(Clone, Debug)]
+pub struct BlockDev {
+    pub name: String,
+    pub size: usize,
+    pub block_size: u64,
+    pub block_count: u32,
+    pub label: Option<String>,
+    pub is_leaf: bool,
 }
 
 pub struct OpenDevice {
-    dev: *mut LkBlockDev,
+    dev: *mut sys::bdev_t,
     read_pos: c_longlong,
     size: c_longlong,
 }
@@ -96,43 +79,68 @@ impl Seek for OpenDevice {
     }
 }
 
-pub struct BlockDevIterator<'a> {
-    iter: LkListIterator<'a, &'a mut LkBlockDev>,
-    _guard: MutexGuard,
-}
+// pub struct BlockDevIterator<'a> {
+//     iter: LkListIterator<'a, &'a mut LkBlockDev>,
+//     _guard: MutexGuard,
+// }
+//
+// impl<'a> Iterator for BlockDevIterator<'a> {
+//     type Item = &'a mut LkBlockDev;
+//
+//     fn next(&mut self) -> Option<Self::Item> {
+//         self.iter.next()
+//     }
+// }
 
-impl<'a> Iterator for BlockDevIterator<'a> {
-    type Item = &'a mut LkBlockDev;
 
-    fn next(&mut self) -> Option<Self::Item> {
-        self.iter.next()
-    }
-}
 
-pub fn get_bdevs<'a>() -> Option<BlockDevIterator<'a>> {
-    let bdevs = unsafe { sys::bio_get_bdevs() };
-    if let Some(bdevs) = unsafe { bdevs.as_mut() } {
-        if let Ok(guard) = acquire(&mut bdevs.mutex) {
-            Some(BlockDevIterator {
-                _guard: guard,
-                iter: LkListIterator::new(&mut bdevs.list),
-            })
-        } else {
-            None
+// impl LkBlockDev {
+//     pub fn label(&self) -> Option<&CStr> {
+//         if self.label.is_null() {
+//             None
+//         } else {
+//             unsafe { Some(CStr::from_ptr(self.label)) }
+//         }
+//     }
+//
+//     pub fn name(&self) -> &CStr {
+//         unsafe { CStr::from_ptr(self.name) }
+//     }
+// }
+
+pub fn get_bdevs() -> Result<Vec<BlockDev>, ()> {
+    let bdevs = unsafe { sys::bio_get_bdevs().as_mut() }.ok_or(())?;
+    let _guard = acquire(&mut bdevs.mutex).map_err(|_| ())?;
+    Ok(LkListIterator::<&mut sys::bdev_t>::new(&mut bdevs.list).filter_map(|dev| {
+        let (name, label) = unsafe {
+            (
+                CStr::from_ptr(dev.name).to_str().ok(),
+                if dev.label.is_null() { None } else { CStr::from_ptr(dev.label).to_str().map_err(|_| ()).ok().map(|v| v.to_string()) }
+            )
+        };
+        if name.is_none() {
+            return None;
         }
-    } else {
-        None
-    }
+        Some(BlockDev {
+            name: name.unwrap().to_string(),
+            size: dev.size as usize,
+            block_size: dev.block_size.into(),
+            is_leaf: dev.is_leaf,
+            label,
+            block_count: dev.block_count,
+        })
+    }).collect())
 }
 
-pub fn open(name: &CStr) -> Option<OpenDevice> {
+pub fn open(name: &str) -> Result<OpenDevice, ()> {
+    let name = CString::new(name).map_err(|_| ())?;
     let dev = unsafe { sys::bio_open(name.as_ptr()) };
 
     if dev.is_null() {
-        None
+        Err(())
     } else {
         let dev_ref = unsafe { &mut *dev };
-        Some(OpenDevice {
+        Ok(OpenDevice {
             dev,
             read_pos: 0,
             size: dev_ref.size,
@@ -141,7 +149,11 @@ pub fn open(name: &CStr) -> Option<OpenDevice> {
 }
 
 mod sys {
-    use crate::bio::*;
+    #![allow(non_camel_case_types)]
+
+    use core::ffi::{c_char, c_int, c_long, c_longlong, c_uint, c_ulong, c_void};
+    use crate::lk_list::list_node;
+    use crate::lk_mutex::Mutex;
 
     #[repr(C)]
     pub struct bdev_struct {
@@ -149,12 +161,25 @@ mod sys {
         pub mutex: Mutex,
     }
 
+    #[repr(C)]
+    #[derive(Debug)]
+    pub struct bdev_t {
+        node: list_node,
+        _ref: c_int,
+        pub name: *mut c_char,
+        pub size: c_longlong,
+        pub block_size: c_ulong,
+        pub block_count: c_uint,
+        pub label: *mut c_char,
+        pub is_leaf: bool,
+    }
+
     extern "C" {
         pub fn bio_get_bdevs() -> *mut bdev_struct;
-        pub fn bio_open(name: *const c_char) -> *mut LkBlockDev;
-        pub fn bio_close(dev: *mut LkBlockDev);
+        pub fn bio_open(name: *const c_char) -> *mut bdev_t;
+        pub fn bio_close(dev: *mut bdev_t);
         pub fn bio_read(
-            dev: *mut LkBlockDev,
+            dev: *mut bdev_t,
             buf: *mut c_void,
             offset: c_longlong,
             len: c_ulong,
