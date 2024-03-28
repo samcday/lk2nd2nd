@@ -18,15 +18,6 @@
 
 #include "boot.h"
 
-struct label {
-	const char *kernel;
-	const char *initramfs;
-	const char *dtb;
-	const char *dtbdir;
-	const char **dtboverlays;
-	const char *cmdline;
-};
-
 enum token {
 	CMD_KERNEL,
 	CMD_APPEND,
@@ -183,7 +174,7 @@ static int parse_command(char **data, size_t *size, char **command, char **value
  *
  * Returns: 0 on success or negative error on parse failure.
  */
-static int parse_conf(char *data, size_t size, struct label *label)
+int extlinux_parse_conf(char *data, size_t size, struct extlinux_label *label)
 {
 	char *command = NULL, *value = NULL;
 	char *overlay, *saveptr;
@@ -246,7 +237,7 @@ static bool fs_file_exists(const char *file)
 }
 
 /**
- * expand_conf() - Sanity check and rewrite the parsed config.
+ * extlinux_expand_conf() - Sanity check and rewrite the parsed config.
  *
  * This function checks if all the values in the config are sane,
  * all mentioned files exists. It then appends the paths with the
@@ -255,7 +246,7 @@ static bool fs_file_exists(const char *file)
  *
  * Returns: True if the config seems bootable, false otherwise.
  */
-static bool expand_conf(struct label *label, const char *root)
+bool extlinux_expand_conf(struct extlinux_label *label, const char *root)
 {
 	const char *const *dtbfiles = lk2nd_device_get_dtb_hints();
 	char path[128];
@@ -401,9 +392,9 @@ static void choose_addrs(const struct kernel64_hdr *kptr, struct load_addrs *add
 }
 
 /**
- * lk2nd_boot_label() - Load all files from the label and boot.
+ * extlinux_boot_label() - Load all files from the label and boot.
  */
-static void lk2nd_boot_label(struct label *label)
+void extlinux_boot_label(struct extlinux_label *label)
 {
 	unsigned int scratch_size = target_get_max_flash_size();
 	void *scratch = target_get_scratch_address();
@@ -513,7 +504,7 @@ void lk2nd_try_extlinux(const char *root)
 {
 	struct filehandle *fileh;
 	struct file_stat stat;
-	struct label label = {0};
+	struct extlinux_label label = {0};
 	char path[64];
 	char *data;
 	int ret;
@@ -530,11 +521,11 @@ void lk2nd_try_extlinux(const char *root)
 	fs_read_file(fileh, data, 0, stat.size);
 	fs_close_file(fileh);
 
-	ret = parse_conf(data, stat.size, &label);
+	ret = extlinux_parse_conf(data, stat.size, &label);
 	if (ret < 0)
 		goto error;
 
-	if (!expand_conf(&label, root))
+	if (!extlinux_expand_conf(&label, root))
 		goto error;
 
 	free(data);
@@ -546,7 +537,7 @@ void lk2nd_try_extlinux(const char *root)
 	dprintf(SPEW, "initramfs = %s\n", label.initramfs);
 	dprintf(SPEW, "cmdline   = %s\n", label.cmdline);
 
-	lk2nd_boot_label(&label);
+    extlinux_boot_label(&label);
 
 	return;
 
