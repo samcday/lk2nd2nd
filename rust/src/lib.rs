@@ -2,15 +2,12 @@
 
 extern crate alloc;
 
-use alloc::ffi::CString;
 use alloc::string::{String, ToString};
-use alloc::{format, vec};
-use core::ffi::{c_char, c_int, c_uint, c_void, CStr};
-use core::ptr::slice_from_raw_parts_mut;
+use alloc::{vec};
+use alloc::boxed::Box;
 use core::time::Duration;
-use anyhow::{Context, ensure, Error};
 
-use byteorder::{ByteOrder, LittleEndian};
+use byteorder::{ByteOrder};
 use embedded_graphics::image::Image;
 use embedded_graphics::pixelcolor::Rgb888;
 use embedded_graphics::{
@@ -27,8 +24,6 @@ use object::{Object, ObjectSection, ReadCacheOps};
 use tinybmp::Bmp;
 
 use crate::bio::OpenDevice;
-use crate::extlinux::extlinux_label;
-use crate::lk_fs::LkFile;
 use crate::lk_thread::sleep;
 
 mod bio;
@@ -43,40 +38,15 @@ mod kernel_boot;
 mod lk_fs;
 mod extlinux;
 
-
-fn scan_extlinux(name: &str) -> anyhow::Result<()> {
-    let mountpoint = format!("/{}", name);
-    lk_fs::mount(&mountpoint, "ext2", name).context("ext2 mount failed")?;
-    let file = LkFile::open(&format!("{}/extlinux/extlinux.conf", mountpoint)).map_err(Error::msg).context("open extlinux.conf failed")?;
-    let (_, size) = file.stat().map_err(Error::msg).context("stat extlinux.conf failed")?;
-    let mut data = vec![0; size + 1];
-    file.read(&mut data[..size], 0).context("read extlinux.conf failed")?;
-
-    println!("nice: {:?}", String::from_utf8_lossy(&data));
-
-    let mut label: extlinux_label = Default::default();
-    let ret = unsafe { extlinux::extlinux_parse_conf(data.as_mut_ptr() as _, data.len() as _, &mut label) };
-    ensure!(ret >= 0, "parsing extlinux.conf failed");
-
-    let root = CString::new(mountpoint.clone()).map_err(Error::msg).context("mountpoint is invalid UTF-8?!")?;
-    let ret = unsafe { extlinux::extlinux_expand_conf(&mut label, root.as_ptr()) };
-    ensure!(ret, "expanding extlinux.conf failed");
-
-    println!("found on {} {:?}", mountpoint, label);
-    unsafe {
-        if !label.dtb.is_null() {
-            let foo = CStr::from_ptr(label.dtb);
-            println!("okay? {:?}", foo);
-        }
-    }
-    unsafe { extlinux::extlinux_boot_label(&mut label); }
-
-    Ok(())
+trait BootOption {
+    fn label() -> String;
+    // fn splash<'a>() -> Option<Image<'a, Rgb888>>;
+    // fn boot() -> !;
 }
 
 #[no_mangle]
 pub extern "C" fn boot_scan() {
-    lk_thread::spawn("boot-scan", || {
+    // lk_thread::spawn("boot-scan", || {
         for dev in bio::get_bdevs().unwrap().iter().filter(|dev| dev.is_leaf) {
             // TODO: expose type GUID in bdev and use that to check for ESP instead.
             if let Some(esp_dev) = dev.label.clone().filter(|label| label.eq("esp")).and_then(|_| bio::open(&dev.name).ok()) {
@@ -92,74 +62,18 @@ pub extern "C" fn boot_scan() {
                 }
             }
 
-            match scan_extlinux(&dev.name) {
+            match extlinux::scan(&dev.name) {
                 Ok(_) => { println!("worked {}", dev.name); },
                 Err(err) => {} //println!("{} extlinux scan failed: {:?}", &dev.name, err)
             }
         }
 
         // TODO: check for magic in boot partition
-        lk_thread::exit()
-    });
+    //     lk_thread::exit()
+    // });
 
     let mut display = fbcon::get().unwrap();
     display.clear(Rgb888::CSS_BLACK).unwrap();
-
-    let color = Rgb888::new(255, 0, 0);
-    // Create styles used by the drawing operations.
-    let thin_stroke = PrimitiveStyle::with_stroke(color, 1);
-    let thick_stroke = PrimitiveStyle::with_stroke(color, 3);
-    let border_stroke = PrimitiveStyleBuilder::new()
-        .stroke_color(color)
-        .stroke_width(3)
-        .stroke_alignment(StrokeAlignment::Inside)
-        .build();
-    let fill = PrimitiveStyle::with_fill(color);
-    let character_style = MonoTextStyle::new(&FONT_24X32, color);
-
-    let text = Text::with_alignment(
-        "Rust ftw",
-        display.bounding_box().center() + Point::new(0, 15),
-        character_style,
-        Alignment::Center,
-    );
-
-    // Draw a 3px wide outline around the display.
-    display
-        .bounding_box()
-        .into_styled(border_stroke)
-        .draw(&mut display)
-        .unwrap();
-
-    let yoffset = 14;
-
-    // Draw a triangle.
-    Triangle::new(
-        Point::new(16, 16 + yoffset),
-        Point::new(16 + 16, 16 + yoffset),
-        Point::new(16 + 8, yoffset),
-    )
-    .into_styled(thin_stroke)
-    .draw(&mut display)
-    .unwrap();
-
-    // Draw a filled square
-    Rectangle::new(Point::new(52, yoffset), Size::new(16, 16))
-        .into_styled(fill)
-        .draw(&mut display)
-        .unwrap();
-
-    // Draw a circle with a 3px wide stroke.
-    Circle::new(Point::new(88, yoffset), 17)
-        .into_styled(thick_stroke)
-        .draw(&mut display)
-        .unwrap();
-
-    // Draw centered text
-    display
-        .fill_solid(&text.bounding_box(), Rgb888::CSS_BLACK)
-        .unwrap();
-    text.draw(&mut display).unwrap();
 
     loop {
         sleep(Duration::from_millis(100));

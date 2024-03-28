@@ -9,7 +9,7 @@ use snafu::Snafu;
 use crate::bio::OpenDevice;
 
 #[derive(Debug)]
-pub struct BootConfig {
+pub struct UkiBootConfig {
     kernel: (u64, u64),
     initrd: (u64, u64),
     commandline: Option<CString>,
@@ -31,7 +31,7 @@ pub enum UkiParseError {
 
 pub fn parse_uki(
     file: fatfs::File<OpenDevice, DefaultTimeProvider, LossyOemCpConverter>,
-) -> Result<BootConfig, UkiParseError> {
+) -> Result<UkiBootConfig, UkiParseError> {
     let reader = ReadCache::new(FatFileReadCacheOps { file: file.clone() });
     let obj = File::parse(&reader).map_err(|_| UkiParseError::InvalidObject)?;
 
@@ -59,7 +59,7 @@ pub fn parse_uki(
 
     let splash = obj.section_by_name(".splash").and_then(|v| v.file_range());
 
-    Ok(BootConfig {
+    Ok(UkiBootConfig {
         kernel,
         initrd,
         dtb,
@@ -85,7 +85,7 @@ pub enum BootError {
 // TODO: currently 64-bit only
 pub fn boot(
     mut file: fatfs::File<OpenDevice, DefaultTimeProvider, LossyOemCpConverter>,
-    config: BootConfig,
+    config: UkiBootConfig,
 ) -> Result<(), BootError> {
     // DTB may not exceed 2mb.
     if config.dtb.1 > 2*1024*1024 {
