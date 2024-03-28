@@ -17,7 +17,7 @@ This is a light fork of lk2nd (mostly code *added*, not too much existing code c
 
  * ESP partition support
  * Boot from UKI
- * (soon) Boot selection screen
+ * Boot selection screen
 
 ## Why fork?
 
