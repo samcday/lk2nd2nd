@@ -32,6 +32,7 @@ mod sys {
     #[repr(C)]
     #[derive(Debug)]
     pub struct extlinux_label {
+        pub label: *const c_char,
         pub kernel: *const c_char,
         pub initramfs: *const c_char,
         pub dtb: *const c_char,
@@ -43,6 +44,7 @@ mod sys {
     impl Default for extlinux_label {
         fn default() -> Self {
             Self {
+                label: 0 as _,
                 kernel: 0 as _,
                 initramfs: 0 as _,
                 dtb: 0 as _,

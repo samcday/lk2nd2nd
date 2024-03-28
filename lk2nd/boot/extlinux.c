@@ -19,6 +19,7 @@
 #include "boot.h"
 
 enum token {
+    CMD_LABEL,
 	CMD_KERNEL,
 	CMD_APPEND,
 	CMD_INITRD,
@@ -32,6 +33,7 @@ static const struct {
 	char *command;
 	enum token token;
 } token_map[] = {
+	{"label",		CMD_LABEL},
 	{"kernel",		CMD_KERNEL},
 	{"linux",		CMD_KERNEL},
 	{"fdtdir",		CMD_FDTDIR},
@@ -182,6 +184,9 @@ int extlinux_parse_conf(char *data, size_t size, struct extlinux_label *label)
 
 	while (parse_command(&data, &size, &command, &value) == 0) {
 		switch (cmd_to_tok(command)) {
+            case CMD_LABEL:
+                label->label = value;
+                break;
 			case CMD_KERNEL:
 				label->kernel = value;
 				break;
@@ -327,6 +332,11 @@ bool extlinux_expand_conf(struct extlinux_label *label, const char *root)
 			return false;
 		}
 	}
+
+    if (label->label)
+		label->label = strdup(label->label);
+    else
+		label->label = "";
 
 	if (label->cmdline)
 		label->cmdline = strdup(label->cmdline);

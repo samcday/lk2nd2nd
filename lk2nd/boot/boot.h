@@ -12,6 +12,7 @@ void lk2nd_print_file_tree(char *root, char *prefix);
 
 /* extlinux.c */
 struct extlinux_label {
+    const char *label;
     const char *kernel;
     const char *initramfs;
     const char *dtb;
