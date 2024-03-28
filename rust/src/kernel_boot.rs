@@ -1,5 +1,6 @@
 use alloc::ffi::CString;
-use alloc::string::ToString;
+use alloc::string::{String, ToString};
+use alloc::sync::Arc;
 use core::ffi::{c_char, c_uint, c_void};
 use core::ptr::slice_from_raw_parts_mut;
 use byteorder::{ByteOrder, LittleEndian};
@@ -7,9 +8,12 @@ use fatfs::{DefaultTimeProvider, LossyOemCpConverter, Read, Seek, SeekFrom};
 use object::{File, Object, ObjectSection, ReadCache, ReadCacheOps};
 use snafu::Snafu;
 use crate::bio::OpenDevice;
+use crate::{BootOption, FatFS, kernel_boot, println};
 
-#[derive(Debug)]
 pub struct UkiBootConfig {
+    fs: Arc<FatFS>,
+    path: String,
+    name: String,
     kernel: (u64, u64),
     initrd: (u64, u64),
     commandline: Option<CString>,
@@ -17,10 +21,26 @@ pub struct UkiBootConfig {
     pub splash: Option<(u64, u64)>,
 }
 
+impl BootOption for UkiBootConfig {
+    fn label(&self) -> &str {
+        &self.name
+    }
+
+    fn boot(&mut self) -> ! {
+        let file = self.fs.root_dir().open_file(&self.path).unwrap();
+        if let Err(err) = boot(file, &self) {
+            println!("oof: {:?}", err)
+        }
+        panic!("noes");
+    }
+}
+
 #[derive(Debug, Snafu)]
 pub enum UkiParseError {
+    FileNotFound,
     #[snafu(display("failed to parse object file"))]
     InvalidObject,
+    OSRelMissing,
     #[snafu(display("kernel not found"))]
     KernelNotFound,
     #[snafu(display("initramfs not found"))]
@@ -29,11 +49,24 @@ pub enum UkiParseError {
     DtbNotFound,
 }
 
-pub fn parse_uki(
-    file: fatfs::File<OpenDevice, DefaultTimeProvider, LossyOemCpConverter>,
-) -> Result<UkiBootConfig, UkiParseError> {
+pub fn parse_uki(fs: Arc<FatFS>, path: &str) -> Result<UkiBootConfig, UkiParseError> {
+    let dir = fs.root_dir();
+    let file = dir.open_file(path).map_err(|_| UkiParseError::FileNotFound)?;
     let reader = ReadCache::new(FatFileReadCacheOps { file: file.clone() });
     let obj = File::parse(&reader).map_err(|_| UkiParseError::InvalidObject)?;
+
+    let name = obj.section_by_name(".osrel")
+        .and_then(|v| v.data().ok())
+        .and_then(|v| CString::new(v).ok())
+        .and_then(|v| v.into_string().ok())
+        .and_then(|v| v.split('\n')
+            .find(|v| v.starts_with("PRETTY_NAME="))
+            .and_then(|v| v.split("=").skip(1).next())
+            .filter(|v| v.len() > 2)
+            .and_then(|v| Some(String::from(&v[1..v.len()-1]))));
+    if name.is_none() {
+        return Err(UkiParseError::OSRelMissing);
+    }
 
     let kernel = obj
         .section_by_name(".linux")
@@ -60,6 +93,9 @@ pub fn parse_uki(
     let splash = obj.section_by_name(".splash").and_then(|v| v.file_range());
 
     Ok(UkiBootConfig {
+        fs: fs.clone(),
+        path: String::from(path),
+        name: name.unwrap(),
         kernel,
         initrd,
         dtb,
@@ -85,7 +121,7 @@ pub enum BootError {
 // TODO: currently 64-bit only
 pub fn boot(
     mut file: fatfs::File<OpenDevice, DefaultTimeProvider, LossyOemCpConverter>,
-    config: UkiBootConfig,
+    config: &UkiBootConfig,
 ) -> Result<(), BootError> {
     // DTB may not exceed 2mb.
     if config.dtb.1 > 2*1024*1024 {
@@ -139,7 +175,7 @@ pub fn boot(
     file.read_exact(initrd).map_err(|_| BootError::Io)?;
 
     // Making sure it really is this code that booted the kernel ;)
-    let mut wow = config.commandline.unwrap().to_string_lossy().to_string();
+    let mut wow = config.commandline.clone().unwrap().to_string_lossy().to_string();
     wow += " haha cool";
     let wow = CString::new(wow).unwrap();
 

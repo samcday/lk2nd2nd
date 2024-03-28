@@ -74,7 +74,7 @@ static const uint16_t published_keys[] = {
 /**
  * lk2nd_boot_pressed_key() - Get the pressed key, if any.
  */
-static uint16_t lk2nd_boot_pressed_key(void)
+uint16_t lk2nd_boot_pressed_key(void)
 {
 	unsigned int i;
 
@@ -85,7 +85,7 @@ static uint16_t lk2nd_boot_pressed_key(void)
 	return 0;
 }
 
-static uint16_t wait_key(void)
+uint16_t wait_key(void)
 {
 	uint16_t keycode = 0;
 

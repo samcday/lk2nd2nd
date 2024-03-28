@@ -1,11 +1,28 @@
 use alloc::{format, vec};
+use alloc::boxed::Box;
 use alloc::ffi::CString;
-use alloc::string::String;
+use alloc::string::{String, ToString};
+use core::ffi::CStr;
 use anyhow::{ensure, Error, Context};
-use crate::lk_fs;
+use crate::{BootOption, lk_fs};
 use crate::lk_fs::LkFile;
 
-pub fn scan(partition: &str) -> anyhow::Result<()> {
+struct ExtLinuxBootConfig {
+    label: sys::extlinux_label,
+    name: String,
+}
+
+impl BootOption for ExtLinuxBootConfig {
+    fn label(&self) -> &str {
+        &self.name
+    }
+
+    fn boot(&mut self) -> ! {
+        unsafe { sys::extlinux_boot_label(&mut self.label); }
+    }
+}
+
+pub fn scan<'a>(partition: &str) -> anyhow::Result<Box<dyn BootOption + 'a>> {
     let mountpoint = format!("/{}", partition);
     lk_fs::mount(&mountpoint, "ext2", partition).context("ext2 mount failed")?;
     let file = LkFile::open(&format!("{}/extlinux/extlinux.conf", mountpoint)).map_err(Error::msg).context("open extlinux.conf failed")?;
@@ -21,7 +38,16 @@ pub fn scan(partition: &str) -> anyhow::Result<()> {
     let ret = unsafe { sys::extlinux_expand_conf(&mut label, root.as_ptr()) };
     ensure!(ret, "expanding extlinux.conf failed");
 
-    unsafe { sys::extlinux_boot_label(&mut label); }
+
+    let name = if label.label.is_null() { "".to_string() } else {
+        let str = unsafe { CStr::from_ptr(label.label) };
+        CString::from(str).to_string_lossy().to_string()
+    };
+
+    Ok(Box::new(ExtLinuxBootConfig {
+        label,
+        name,
+    }))
 }
 
 mod sys {

@@ -6,7 +6,8 @@ use core::ffi::{c_char, c_int, c_long, c_longlong, c_uint, c_ulong, c_void, CStr
 use crate::lk_list::{list_node, LkListIterator};
 use crate::lk_mutex::{acquire, Mutex, MutexGuard};
 use crate::println;
-use fatfs::{IoBase, Read, Seek, SeekFrom, Write};
+use fatfs::{IoBase, IoError, Read, Seek, SeekFrom, Write};
+use snafu::prelude::*;
 
 #[derive(Clone, Debug)]
 pub struct BlockDev {
@@ -32,8 +33,30 @@ impl Drop for OpenDevice {
     }
 }
 
+#[derive(Debug, Snafu)]
+pub enum BioError {
+    UnexpectedEOF,
+    WriteZero,
+    #[snafu(display("read error {code}"))]
+    ReadError{code: c_long}
+}
+
+impl IoError for BioError {
+    fn is_interrupted(&self) -> bool {
+        false
+    }
+
+    fn new_unexpected_eof_error() -> Self {
+        BioError::UnexpectedEOF
+    }
+
+    fn new_write_zero_error() -> Self {
+        BioError::WriteZero
+    }
+}
+
 impl IoBase for OpenDevice {
-    type Error = ();
+    type Error = BioError;
 }
 
 impl Read for OpenDevice {
@@ -48,18 +71,17 @@ impl Read for OpenDevice {
             )
         };
         if read < 0 {
-            Err(())
-        } else {
-            self.read_pos += read as c_longlong;
-            Ok(read as usize)
+            return Err(BioError::ReadError{code: read});
         }
+        self.read_pos += read as c_longlong;
+        Ok(read as usize)
     }
 }
 
 impl Write for OpenDevice {
     fn write(&mut self, _buf: &[u8]) -> Result<usize, Self::Error> {
-        println!("unhandled write");
-        Err(())
+        // unimplemented - this should trigger a WriteZero error
+        Ok(0)
     }
 
     fn flush(&mut self) -> Result<(), Self::Error> {
@@ -78,35 +100,6 @@ impl Seek for OpenDevice {
         Ok(self.read_pos as u64)
     }
 }
-
-// pub struct BlockDevIterator<'a> {
-//     iter: LkListIterator<'a, &'a mut LkBlockDev>,
-//     _guard: MutexGuard,
-// }
-//
-// impl<'a> Iterator for BlockDevIterator<'a> {
-//     type Item = &'a mut LkBlockDev;
-//
-//     fn next(&mut self) -> Option<Self::Item> {
-//         self.iter.next()
-//     }
-// }
-
-
-
-// impl LkBlockDev {
-//     pub fn label(&self) -> Option<&CStr> {
-//         if self.label.is_null() {
-//             None
-//         } else {
-//             unsafe { Some(CStr::from_ptr(self.label)) }
-//         }
-//     }
-//
-//     pub fn name(&self) -> &CStr {
-//         unsafe { CStr::from_ptr(self.name) }
-//     }
-// }
 
 pub fn get_bdevs() -> Result<Vec<BlockDev>, ()> {
     let bdevs = unsafe { sys::bio_get_bdevs().as_mut() }.ok_or(())?;

@@ -4,16 +4,16 @@
 
 A fork of [lk2nd][1] that provides extended bootloader features.
 
-**NOTE:** this bootloader currently *only* supports msm8916 devices. It is also **experimental** at this time. Please **do not** flash it to a device that doesn't provide a way to reflash the boot partition before this bootloader starts.
+**NOTE:** this bootloader currently *only* supports a limited subset of msm8916 devices. It is also **experimental** at this time. Please **do not** flash it to a device that doesn't provide a way to reflash the boot partition (i.e Samsung Odin download mode) before this bootloader starts.
 
-The maintainer has only tested it on the following devices:
+I've only tested lk2nd2nd on the following devices:
 
  * [Samsung Galaxy A5 (2015)][2]
  * [Samsung Galaxy Tab A 9.7 (2015)][3]
 
 ## Features
 
-This is a light fork of lk2nd, so it can do everything you can expect from lk2nd, plus the following features:
+This is a light fork of lk2nd (mostly code *added*, not too much existing code changed), so it can do everything you can expect from lk2nd, plus the following features:
 
  * ESP partition support
  * Boot from UKI
