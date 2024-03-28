@@ -4,7 +4,11 @@ use alloc::ffi::CString;
 use alloc::string::{String, ToString};
 use core::ffi::CStr;
 use anyhow::{ensure, Error, Context};
+use embedded_graphics::draw_target::DrawTarget;
+use embedded_graphics::image::{Image, ImageDrawable};
+use embedded_graphics::pixelcolor::Rgb888;
 use crate::{BootOption, lk_fs};
+use crate::fbcon::FbCon888;
 use crate::lk_fs::LkFile;
 
 struct ExtLinuxBootConfig {
@@ -17,9 +21,15 @@ impl BootOption for ExtLinuxBootConfig {
         &self.name
     }
 
+    fn splash(&self, display: &mut FbCon888) -> Result<(), ()> {
+        Ok(())
+    }
+
     fn boot(&mut self) -> ! {
         unsafe { sys::extlinux_boot_label(&mut self.label); }
     }
+
+
 }
 
 pub fn scan<'a>(partition: &str) -> anyhow::Result<Box<dyn BootOption + 'a>> {
@@ -39,11 +49,17 @@ pub fn scan<'a>(partition: &str) -> anyhow::Result<Box<dyn BootOption + 'a>> {
     ensure!(ret, "expanding extlinux.conf failed");
 
 
-    let name = if label.label.is_null() { "".to_string() } else {
+    let mut name = if label.label.is_null() { "".to_string() } else {
         let str = unsafe { CStr::from_ptr(label.label) };
         CString::from(str).to_string_lossy().to_string()
     };
 
+    // TODO: properly detect where devices are coming from, somehow...
+    if partition.starts_with("wrp0") {
+        name += " (internal)"
+    } else {
+        name += " (SD card)"
+    }
     Ok(Box::new(ExtLinuxBootConfig {
         label,
         name,

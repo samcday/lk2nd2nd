@@ -23,6 +23,7 @@ use profont::PROFONT_24_POINT;
 use tinybmp::Bmp;
 
 use crate::bio::OpenDevice;
+use crate::fbcon::FbCon888;
 use crate::lk_thread::sleep;
 
 mod bio;
@@ -39,7 +40,7 @@ mod extlinux;
 
 trait BootOption {
     fn label(&self) -> &str;
-    // fn splash<'a>() -> Option<Image<'a, Rgb888>>;
+    fn splash(&self, display: &mut FbCon888) -> Result<(), ()>;
     fn boot(&mut self) -> !;
 }
 
@@ -85,7 +86,10 @@ pub extern "C" fn boot_scan() {
     let mut selected = 0;
 
     loop {
+        display.clear(Rgb888::CSS_BLACK).unwrap();
         print_menu(selected, &options, &mut display);
+
+        options[selected].splash(&mut display);
 
         match unsafe { wait_key() } {
             KEY_POWER => {
@@ -138,9 +142,6 @@ fn scan_esp(fs: Arc<FatFS>, root: &str, options: &mut Vec<Box<dyn BootOption>>) 
                 match kernel_boot::parse_uki(fs.clone(), &format!("{}/{}", root, name)) {
                     Ok(config) => {
                         options.push(Box::new(config));
-                        // if let Some(splash) = config.splash {
-                        //     let _u = show_splash(file.clone(), splash);
-                        // }
                     }
                     Err(err) => println!("oof: {:?}", err),
                 }
@@ -149,21 +150,4 @@ fn scan_esp(fs: Arc<FatFS>, root: &str, options: &mut Vec<Box<dyn BootOption>>) 
     }
 
     Ok(())
-}
-
-fn show_splash(
-    mut file: fatfs::File<OpenDevice, DefaultTimeProvider, LossyOemCpConverter>,
-    (start, size): (u64, u64),
-) -> Result<(), ()> {
-    let mut splash = vec![0; size as usize];
-    file.seek(SeekFrom::Start(start)).map_err(|_| ())?;
-    file.read_exact(&mut splash).map_err(|_| ())?;
-
-    let mut display = fbcon::get().ok_or(())?;
-    let bmp = Bmp::<Rgb888>::from_slice(&splash).map_err(|_| ())?.with_alpha_bg(Rgb888::CSS_BLACK);
-    let mut pos = Point::zero();
-    pos.x = display.bounding_box().center().x - (bmp.size().width as i32) / 2;
-    pos.y = display.bounding_box().bottom_right().unwrap().y - bmp.size().height as i32;
-    let img = Image::new(&bmp, pos);
-    img.draw(&mut display).map_err(|_| ())
 }

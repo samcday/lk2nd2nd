@@ -1,14 +1,21 @@
+use alloc::boxed::Box;
 use alloc::ffi::CString;
 use alloc::string::{String, ToString};
 use alloc::sync::Arc;
+use alloc::vec;
 use core::ffi::{c_char, c_uint, c_void};
 use core::ptr::slice_from_raw_parts_mut;
 use byteorder::{ByteOrder, LittleEndian};
+use embedded_graphics::image::Image;
+use embedded_graphics::pixelcolor::Rgb888;
 use fatfs::{DefaultTimeProvider, LossyOemCpConverter, Read, Seek, SeekFrom};
 use object::{File, Object, ObjectSection, ReadCache, ReadCacheOps};
 use snafu::Snafu;
+use tinybmp::Bmp;
 use crate::bio::OpenDevice;
 use crate::{BootOption, FatFS, kernel_boot, println};
+use crate::fbcon::FbCon888;
+use embedded_graphics::prelude::*;
 
 pub struct UkiBootConfig {
     fs: Arc<FatFS>,
@@ -24,6 +31,23 @@ pub struct UkiBootConfig {
 impl BootOption for UkiBootConfig {
     fn label(&self) -> &str {
         &self.name
+    }
+
+    fn splash(&self, display: &mut FbCon888) -> Result<(), ()> {
+        let (offset, size) = self.splash.clone().ok_or(())?;
+        let mut buf = vec![0; size as usize];
+        let mut file = self.fs.root_dir().open_file(&self.path).map_err(|_| ())?;
+        file.seek(SeekFrom::Start(offset)).map_err(|_| ())?;
+        file.read_exact(&mut buf).map_err(|_| ())?;
+
+        let splash = Bmp::<Rgb888>::from_slice(&buf).map_err(|_| ())?.with_alpha_bg(Rgb888::CSS_BLACK);
+
+        let mut pos = Point::zero();
+        pos.x = display.bounding_box().center().x - (splash.size().width as i32) / 2;
+        pos.y = display.bounding_box().bottom_right().unwrap().y - splash.size().height as i32;
+        Image::new(&splash, pos)
+            .draw(display).map_err(|_| ())?;
+        Ok(())
     }
 
     fn boot(&mut self) -> ! {
