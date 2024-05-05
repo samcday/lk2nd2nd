@@ -40,10 +40,8 @@
 #include <uart_dm.h>
 #include <gsbi.h>
 
-#ifndef NULL
-#define NULL        0
-#endif
-
+#define MSM_BOOT_UART_DM_CMD_RESET_RX	0x10
+#define MSM_BOOT_UART_DM_CMD_RESET_TX	0x20
 
 static int uart_init_flag = 0;
 
@@ -98,13 +96,10 @@ static uint8_t pack_chars_into_words(uint8_t *buffer, uint8_t cnt, uint32_t *wor
 /* Static Function Prototype Declarations */
 static unsigned int msm_boot_uart_calculate_num_chars_to_write(char *data_in,
 							       uint32_t *num_of_chars);
-static unsigned int msm_boot_uart_dm_init(uint32_t base);
 static unsigned int msm_boot_uart_dm_read(uint32_t base,
-	unsigned int *data, int wait);
+	unsigned int *data);
 static unsigned int msm_boot_uart_dm_write(uint32_t base, char *data,
 	unsigned int num_of_chars);
-static unsigned int msm_boot_uart_dm_init_rx_transfer(uint32_t base);
-static unsigned int msm_boot_uart_dm_reset(uint32_t base);
 
 /* Keep track of uart block vs port mapping.
  */
@@ -139,168 +134,42 @@ msm_boot_uart_calculate_num_chars_to_write(char *data_in,
 	return MSM_BOOT_UART_DM_E_SUCCESS;
 }
 
-/*
- * Reset the UART
- */
-static unsigned int msm_boot_uart_dm_reset(uint32_t base)
-{
-	writel(MSM_BOOT_UART_DM_CMD_RESET_RX, MSM_BOOT_UART_DM_CR(base));
-	writel(MSM_BOOT_UART_DM_CMD_RESET_TX, MSM_BOOT_UART_DM_CR(base));
-	writel(MSM_BOOT_UART_DM_CMD_RESET_ERR_STAT, MSM_BOOT_UART_DM_CR(base));
-	writel(MSM_BOOT_UART_DM_CMD_RES_TX_ERR, MSM_BOOT_UART_DM_CR(base));
-	writel(MSM_BOOT_UART_DM_CMD_RES_STALE_INT, MSM_BOOT_UART_DM_CR(base));
-
-	return MSM_BOOT_UART_DM_E_SUCCESS;
-}
-
-/*
- * Initialize UART_DM - configure clock and required registers.
- */
-static unsigned int msm_boot_uart_dm_init(uint32_t uart_dm_base)
-{
-	/* Configure UART mode registers MR1 and MR2 */
-	/* Hardware flow control isn't supported */
-	writel(0x0, MSM_BOOT_UART_DM_MR1(uart_dm_base));
-
-	/* 8-N-1 configuration: 8 data bits - No parity - 1 stop bit */
-	writel(MSM_BOOT_UART_DM_8_N_1_MODE, MSM_BOOT_UART_DM_MR2(uart_dm_base));
-
-	/* Configure Interrupt Mask register IMR */
-	writel(MSM_BOOT_UART_DM_IMR_ENABLED, MSM_BOOT_UART_DM_IMR(uart_dm_base));
-
-	/* Configure Tx and Rx watermarks configuration registers */
-	/* TX watermark value is set to 0 - interrupt is generated when
-	 * FIFO level is less than or equal to 0 */
-	writel(MSM_BOOT_UART_DM_TFW_VALUE, MSM_BOOT_UART_DM_TFWR(uart_dm_base));
-
-	/* RX watermark value */
-	writel(MSM_BOOT_UART_DM_RFW_VALUE, MSM_BOOT_UART_DM_RFWR(uart_dm_base));
-
-	/* Configure Interrupt Programming Register */
-	/* Set initial Stale timeout value */
-	writel(MSM_BOOT_UART_DM_STALE_TIMEOUT_LSB, MSM_BOOT_UART_DM_IPR(uart_dm_base));
-
-	/* Configure IRDA if required */
-	/* Disabling IRDA mode */
-	writel(0x0, MSM_BOOT_UART_DM_IRDA(uart_dm_base));
-
-	/* Configure and enable sim interface if required */
-
-	/* Configure hunt character value in HCR register */
-	/* Keep it in reset state */
-	writel(0x0, MSM_BOOT_UART_DM_HCR(uart_dm_base));
-
-	/* Configure Rx FIFO base address */
-	/* Both TX/RX shares same SRAM and default is half-n-half.
-	 * Sticking with default value now.
-	 * As such RAM size is (2^RAM_ADDR_WIDTH, 32-bit entries).
-	 * We have found RAM_ADDR_WIDTH = 0x7f */
-
-	/* Issue soft reset command */
-	msm_boot_uart_dm_reset(uart_dm_base);
-
-	/* Enable/Disable Rx/Tx DM interfaces */
-	/* Data Mover not currently utilized. */
-	writel(0x0, MSM_BOOT_UART_DM_DMEN(uart_dm_base));
-
-	/* Enable transmitter and receiver */
-	writel(MSM_BOOT_UART_DM_CR_RX_ENABLE, MSM_BOOT_UART_DM_CR(uart_dm_base));
-	writel(MSM_BOOT_UART_DM_CR_TX_ENABLE, MSM_BOOT_UART_DM_CR(uart_dm_base));
-
-	/* Initialize Receive Path */
-	msm_boot_uart_dm_init_rx_transfer(uart_dm_base);
-
-	return MSM_BOOT_UART_DM_E_SUCCESS;
-}
-
-/*
- * Initialize Receive Path
- */
-static unsigned int msm_boot_uart_dm_init_rx_transfer(uint32_t uart_dm_base)
-{
-	writel(MSM_BOOT_UART_DM_GCMD_DIS_STALE_EVT, MSM_BOOT_UART_DM_CR(uart_dm_base));
-	writel(MSM_BOOT_UART_DM_CMD_RES_STALE_INT, MSM_BOOT_UART_DM_CR(uart_dm_base));
-	writel(MSM_BOOT_UART_DM_DMRX_DEF_VALUE, MSM_BOOT_UART_DM_DMRX(uart_dm_base));
-	writel(MSM_BOOT_UART_DM_GCMD_ENA_STALE_EVT, MSM_BOOT_UART_DM_CR(uart_dm_base));
-
-	return MSM_BOOT_UART_DM_E_SUCCESS;
-}
 
 /*
  * UART Receive operation
  * Reads a word from the RX FIFO.
  */
 static unsigned int
-msm_boot_uart_dm_read(uint32_t base, unsigned int *data, int wait)
+msm_boot_uart_dm_read(uint32_t base, unsigned int *data)
 {
-	static int rx_last_snap_count = 0;
-	static int rx_chars_read_since_last_xfer = 0;
+  unsigned int sr;
+  unsigned int count;
 
 	if (data == NULL) {
 		return MSM_BOOT_UART_DM_E_INVAL;
 	}
 
-	/* We will be polling RXRDY status bit */
-	while (!(readl(MSM_BOOT_UART_DM_SR(base)) & MSM_BOOT_UART_DM_SR_RXRDY)) {
-		/* if this is not a blocking call, we'll just return */
-		if (!wait) {
-			return MSM_BOOT_UART_DM_E_RX_NOT_READY;
-		}
-	}
+  /* Check for Overrun error. We'll just reset Error Status */
+  if (readl(MSM_BOOT_UART_DM_SR(base)) & MSM_BOOT_UART_DM_SR_UART_OVERRUN) {
+    writel(MSM_BOOT_UART_DM_CMD_RESET_ERR_STAT, MSM_BOOT_UART_DM_CR(base));
+  }
 
-	/* Check for Overrun error. We'll just reset Error Status */
-	if (readl(MSM_BOOT_UART_DM_SR(base)) & MSM_BOOT_UART_DM_SR_UART_OVERRUN) {
-		writel(MSM_BOOT_UART_DM_CMD_RESET_ERR_STAT, MSM_BOOT_UART_DM_CR(base));
-	}
-
-	/* RX FIFO is ready; read a word. */
-	*data = readl(MSM_BOOT_UART_DM_RF(base, 0));
-
-	/* increment the total count of chars we've read so far */
-	rx_chars_read_since_last_xfer += 4;
-
-	/* Rx transfer ends when one of the conditions is met:
-	 * - The number of characters received since the end of the previous
-	 *   xfer equals the value written to DMRX at Transfer Initialization
-	 * - A stale event occurred
-	 */
-
-	/* If RX transfer has not ended yet */
-	if (rx_last_snap_count == 0) {
-		/* Check if we've received stale event */
-		if (readl(MSM_BOOT_UART_DM_MISR(base)) & MSM_BOOT_UART_DM_RXSTALE) {
-			/* Send command to reset stale interrupt */
-			writel(MSM_BOOT_UART_DM_CMD_RES_STALE_INT, MSM_BOOT_UART_DM_CR(base));
-		}
-
-		/* Check if we haven't read more than DMRX value */
-		else if ((unsigned int)rx_chars_read_since_last_xfer <
-			readl(MSM_BOOT_UART_DM_DMRX(base))) {
-			/* We can still continue reading before initializing RX transfer */
-			return MSM_BOOT_UART_DM_E_SUCCESS;
-		}
-
-		/* If we've reached here it means RX
-		 * xfer end conditions been met
-		 */
-
-		/* Read UART_DM_RX_TOTAL_SNAP register
-		 * to know how many valid chars
-		 * we've read so far since last transfer
-		 */
-		rx_last_snap_count = readl(MSM_BOOT_UART_DM_RX_TOTAL_SNAP(base));
-
-	}
-
-	/* If there are still data left in FIFO we'll read them before
-	 * initializing RX Transfer again */
-	if ((rx_last_snap_count - rx_chars_read_since_last_xfer) >= 0) {
-		return MSM_BOOT_UART_DM_E_SUCCESS;
-	}
-
-	msm_boot_uart_dm_init_rx_transfer(base);
-	rx_last_snap_count = 0;
-	rx_chars_read_since_last_xfer = 0;
+  sr = readl(MSM_BOOT_UART_DM_SR(base));
+	if (sr & MSM_BOOT_UART_DM_SR_RXRDY) {
+    /* There are at least 4 bytes in fifo */
+    *data = readl(MSM_BOOT_UART_DM_RF(base, 0));
+	} else {
+    /* Check if there is anything in fifo */
+    count = readl(MSM_BOOT_UART_DM_RXFS(base)) >> 0x7 & 0x7;
+    if (!count) {
+      return MSM_BOOT_UART_DM_E_RX_NOT_READY;
+    }
+    /* There is at least one character, move it to fifo */
+    writel(MSM_BOOT_UART_DM_GCMD_SW_FORCE_STALE, MSM_BOOT_UART_DM_CR(base));
+    *data = readl(MSM_BOOT_UART_DM_RF(base, 0));
+    writel(MSM_BOOT_UART_DM_GCMD_RESET_STALE_INT, MSM_BOOT_UART_DM_CR(base));
+    writel(0x7, MSM_BOOT_UART_DM_DMRX(base));
+  }
 
 	return MSM_BOOT_UART_DM_E_SUCCESS;
 }
@@ -408,8 +277,17 @@ void uart_dm_init(uint8_t id, uint32_t gsbi_base, uint32_t uart_dm_base)
 	writel(UART_DM_CLK_RX_TX_BIT_RATE, MSM_BOOT_UART_DM_CSR(uart_dm_base));
 	dsb();
 
-	/* Intialize UART_DM */
-	msm_boot_uart_dm_init(uart_dm_base);
+  /* Enable RS232 flow control to support RS232 db9 connector */
+  writel(BIT(7), MSM_BOOT_UART_DM_MR1(uart_dm_base));
+
+  /* 8-N-1 configuration: 8 data bits - No parity - 1 stop bit */
+  writel(MSM_BOOT_UART_DM_8_N_1_MODE, MSM_BOOT_UART_DM_MR2(uart_dm_base));
+
+  writel(MSM_BOOT_UART_DM_CMD_RESET_RX, MSM_BOOT_UART_DM_CR(uart_dm_base));
+  writel(MSM_BOOT_UART_DM_CMD_RESET_TX, MSM_BOOT_UART_DM_CR(uart_dm_base));
+
+  /* Make sure BAM/single character mode is disabled */
+  writel(0x0, MSM_BOOT_UART_DM_DMEN(uart_dm_base));
 
 	msm_boot_uart_dm_write(uart_dm_base, data, 44);
 
@@ -445,6 +323,7 @@ int uart_putc(int port, char c)
 int uart_getc(int port, bool wait)
 {
 	int byte;
+  unsigned int ret;
 	static unsigned int word = 0;
 	uint32_t uart_base = port_lookup[port];
 
@@ -453,12 +332,13 @@ int uart_getc(int port, bool wait)
 		return -1;
 
 	if (!word) {
-		/* Read from FIFO only if it's a first read or all the four
-		 * characters out of a word have been read */
-		if (msm_boot_uart_dm_read(uart_base, &word, wait) != MSM_BOOT_UART_DM_E_SUCCESS) {
-			return -1;
+		/* FIFO is empty, replenish. */
+    ret = msm_boot_uart_dm_read(uart_base, &word);
+		while (wait && ret == MSM_BOOT_UART_DM_E_RX_NOT_READY) {
+      ret = msm_boot_uart_dm_read(uart_base, &word);
 		}
-
+    if (ret != MSM_BOOT_UART_DM_E_SUCCESS)
+      return -1;
 	}
 
 	byte = (int)word & 0xff;
