@@ -7,9 +7,15 @@ use alloc::{format, vec};
 use alloc::boxed::Box;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
+use core::ffi::{c_char, c_int, c_uchar, c_void};
+use core::ops::AddAssign;
+use core::slice;
+use core::time::Duration;
 use anyhow::Error;
 
 use byteorder::{ByteOrder};
+use core2::io::{ErrorKind, Write};
+use core2::io::ErrorKind::Other;
 use embedded_graphics::image::Image;
 use embedded_graphics::mono_font::MonoTextStyle;
 use embedded_graphics::pixelcolor::Rgb888;
@@ -21,9 +27,12 @@ use fatfs::{DefaultTimeProvider, FileSystem, LossyOemCpConverter, Read, Seek, Se
 use object::{Object, ObjectSection, ReadCacheOps};
 use profont::PROFONT_24_POINT;
 use tinybmp::Bmp;
+use txmodems::variants::xmodem::XModem;
+use txmodems::common::{BlockLengthKind, ChecksumKind, ModemTrait, XModemTrait};
 
 use crate::bio::OpenDevice;
 use crate::fbcon::FbCon888;
+use crate::fmt::_dputc;
 use crate::lk_thread::sleep;
 
 mod bio;
@@ -46,6 +55,8 @@ trait BootOption {
 
 extern "C" {
     fn wait_key() -> u16;
+
+    fn uart_getc(port: c_int, wait: bool) -> c_int;
 }
 
 const KEY_VOLUMEUP: u16 = 0x115;
@@ -54,8 +65,101 @@ const KEY_POWER: u16 = 0x119;
 
 pub type FatFS = FileSystem<OpenDevice, DefaultTimeProvider, LossyOemCpConverter>;
 
+struct SerialDevice {
+}
+
+impl core2::io::Read for SerialDevice {
+    fn read(&mut self, mut buf: &mut [u8]) -> core2::io::Result<usize> {
+        let mut inp: c_int = 0;
+        for i in 0..buf.len() {
+            inp = unsafe { uart_getc(0, true) };
+            if inp < 0 {
+                return Err(core2::io::Error::new(ErrorKind::Other, "err"));
+            }
+            buf[i] = inp as u8;
+        }
+        Ok(buf.len())
+    }
+}
+
+impl core2::io::Write for SerialDevice {
+    fn write(&mut self, buf: &[u8]) -> core2::io::Result<usize> {
+        for b in buf {
+            unsafe { _dputc(*b as c_char); }
+        }
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> core2::io::Result<()> {
+        Ok(())
+    }
+}
+
+struct KernelDirectLoader {
+    ptr: *mut u8,
+}
+
+impl core2::io::Write for KernelDirectLoader {
+    fn write(&mut self, buf: &[u8]) -> core2::io::Result<usize> {
+        unsafe { slice::from_raw_parts_mut(self.ptr, buf.len()).copy_from_slice(buf); }
+        self.ptr = unsafe { self.ptr.add(buf.len()) };
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> core2::io::Result<()> {
+        Ok(())
+    }
+}
+
 #[no_mangle]
 pub extern "C" fn boot_scan() {
+    // lk_thread::spawn("uart", || {
+    //     let mut inp: c_char = 0;
+    //
+    //     loop {
+    //         if unsafe { dgetc(&mut inp, true) } == 0 {
+    //             println!("you said: {}", inp);
+    //         }
+    //     }
+    // });
+
+    lk_thread::spawn("xmodem", || {
+        let mut modem = XModem::new();
+        modem.block_length = BlockLengthKind::OneK;
+        let mut dev = SerialDevice{};
+        loop {
+            println!("waiting...");
+            loop {
+                if unsafe { uart_getc(0, true) == 0x20 } {
+                    break;
+                }
+            }
+            let mut foo = KernelDirectLoader{ptr: unsafe { kernel_boot::sys::get_ddr_start() as *mut u8 } };
+            println!("*Orc peon voice* ready to work...");
+            sleep(Duration::from_millis(250));
+            let result = modem.receive(&mut dev, &mut foo, ChecksumKind::Crc16);
+            sleep(Duration::from_millis(250));
+            match result {
+                Ok(_) => {
+                    println!("ok here we go I guess.");
+                    // quintessential unsafe. Really, I don't think unsafe gets any more unsafe than this.
+                    unsafe {
+                        kernel_boot::sys::boot_linux(
+                            kernel_boot::sys::get_ddr_start() as *mut c_void,
+                            0 as *mut c_void,
+                            0 as *mut c_char,
+                            kernel_boot::sys::board_machtype(),
+                            0 as *mut c_void,
+                            0,
+                            0
+                        );
+                    }
+                },
+                Err(e) => println!("onoes! {:?}", e),
+            }
+        }
+        lk_thread::exit();
+    });
     // lk_thread::spawn("boot-scan", || {
     let mut options: Vec<Box<dyn BootOption>> = Vec::new();
 

@@ -239,7 +239,7 @@ impl<'a> ReadCacheOps for FatFileReadCacheOps<'a> {
     }
 }
 
-mod sys {
+pub mod sys {
     use core::ffi::{c_char, c_uint, c_void};
 
     extern "C" {

@@ -1217,12 +1217,17 @@ void boot_linux(void *kernel, unsigned *tags,
 
 	if (IS_ARM64(kptr))
 		boot_type |= BOOT_ARM64;
-	if (strstr(cmdline, "androidboot"))
-		boot_type |= BOOT_ANDROID;
-	if (strcmp(cmdline, "lk2nd") == 0)
-		boot_type |= BOOT_LK2ND;
 
-	final_cmdline = update_cmdline2(cmdline, boot_type);
+  if (cmdline) {
+    if (strstr(cmdline, "androidboot"))
+      boot_type |= BOOT_ANDROID;
+    if (strcmp(cmdline, "lk2nd") == 0)
+      boot_type |= BOOT_LK2ND;
+    final_cmdline = update_cmdline2(cmdline, boot_type);
+  }
+
+  if (!tags)
+    goto tags_done;
 
 	if (boot_type & BOOT_ATAGS_COPY) {
 		generate_atags(tags, (const char *)final_cmdline,
